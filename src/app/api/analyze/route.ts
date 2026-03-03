@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeSite } from "@/lib/analyzer";
-import type { PageSpeedData } from "@/lib/analyzer";
+import type { PageSpeedData, DomainData } from "@/lib/analyzer";
 
 export const maxDuration = 60;
 
@@ -136,7 +136,34 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const result = await analyzeSite(cleanUrl, pageSpeedData);
+    // Optional: OpenPageRank API for Domain Authority
+    let domainData: DomainData | undefined;
+    const oprKey = process.env.OPEN_PAGE_RANK_API_KEY;
+    if (oprKey) {
+      try {
+        const fullUrl = cleanUrl.startsWith("http") ? cleanUrl : "https://" + cleanUrl;
+        const domain = new URL(fullUrl).hostname.replace(/^www\./, "");
+        const oprUrl = `https://openpagerank.com/api/v1.0/getPageRank?domains[0]=${encodeURIComponent(domain)}`;
+        const oprRes = await fetch(oprUrl, {
+          headers: { "API-OPR": oprKey },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (oprRes.ok) {
+          const oprJson = await oprRes.json();
+          const entry = oprJson?.response?.[0];
+          if (entry && entry.status_code === 200) {
+            domainData = {
+              domainAuthority: Math.round(entry.page_rank_integer ?? 0),
+              globalRank: entry.rank ? parseInt(entry.rank) : 0,
+            };
+          }
+        }
+      } catch {
+        // Silent fallback — analysis continues without domain authority data
+      }
+    }
+
+    const result = await analyzeSite(cleanUrl, pageSpeedData, domainData);
     return NextResponse.json(result);
   } catch (err: unknown) {
     const message =

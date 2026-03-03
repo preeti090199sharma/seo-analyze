@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import type { AnalysisResult, CategoryResult, Check } from "@/lib/analyzer";
+import type { AnalysisResult, CategoryResult, Check, KeywordEntry } from "@/lib/analyzer";
 
 // ─── Score Circle ─────────────────────────────────────────────────────────────
 
@@ -146,6 +146,66 @@ function TopActionsPanel({ categories }: { categories: AnalysisResult["categorie
   );
 }
 
+// ─── Top Keywords Panel ───────────────────────────────────────────────────────
+
+function TopKeywordsPanel({ keywords, domainAuthority }: {
+  keywords: KeywordEntry[];
+  domainAuthority?: { score: number; rank: number };
+}) {
+  if (keywords.length === 0) return null;
+
+  const top = keywords.slice(0, 10);
+  const maxCount = top[0]?.count || 1;
+
+  return (
+    <div className="glass rounded-2xl p-6 mb-6 animate-fade-in">
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <span className="text-xl">🔑</span>
+        <h3 className="text-lg font-bold text-white">Keyword Analysis</h3>
+        {domainAuthority && (
+          <span className={`ml-auto inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
+            domainAuthority.score >= 5
+              ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+              : domainAuthority.score >= 2
+              ? "bg-amber-500/20 text-amber-400 border-amber-500/30"
+              : "bg-red-500/20 text-red-400 border-red-500/30"
+          }`}>
+            DA {domainAuthority.score}/10
+            {domainAuthority.rank > 0 && (
+              <span className="text-slate-400 font-normal">· Rank #{domainAuthority.rank.toLocaleString()}</span>
+            )}
+          </span>
+        )}
+        {!domainAuthority && (
+          <span className="ml-auto text-xs text-slate-500">
+            Add <code className="text-indigo-400">OPEN_PAGE_RANK_API_KEY</code> for Domain Authority
+          </span>
+        )}
+      </div>
+      <div className="space-y-2">
+        {top.map((kw, i) => (
+          <div key={kw.word} className="flex items-center gap-3">
+            <span className="text-xs text-slate-500 w-4 text-right">{i + 1}</span>
+            <span className="text-sm text-white font-mono w-28 truncate">{kw.word}</span>
+            <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full bg-indigo-500/60 transition-all duration-700"
+                style={{ width: `${(kw.count / maxCount) * 100}%` }}
+              />
+            </div>
+            <span className="text-xs text-slate-400 w-16 text-right">
+              {kw.count}x · {kw.density}%
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-slate-600 mt-3">
+        Keyword density shown from visible page text. Focus keyword should appear at 1–3%.
+      </p>
+    </div>
+  );
+}
+
 // ─── Category Card ───────────────────────────────────────────────────────────
 
 function CategoryCard({
@@ -258,6 +318,7 @@ function LoadingView({ url }: { url: string }) {
     "Checking headings & structure...",
     "Scanning images & alt texts...",
     "Checking broken links...",
+    "Extracting keywords & authority...",
     "Analyzing performance...",
     "Checking social tags...",
     "Analyzing security headers...",
@@ -649,8 +710,8 @@ export default function Home() {
             {/* Features Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mt-10 max-w-4xl mx-auto">
               {[
-                { icon: "🔍", title: "40+ Checks", desc: "Meta, headings, images, links, technical, security & more" },
-                { icon: "⚡", title: "Core Web Vitals", desc: "Real LCP, CLS, TBT from Google PageSpeed Insights" },
+                { icon: "🔍", title: "50+ Checks", desc: "Meta, headings, images, links, keywords, technical, security & more" },
+                { icon: "🔑", title: "Keyword Analysis", desc: "Focus keyword detection, density, URL/meta/content coverage" },
                 { icon: "🎯", title: "Priority Actions", desc: "Ranked fixes sorted by SEO impact — know what to fix first" },
                 { icon: "📄", title: "PDF Report", desc: "Professional report with action plan, ready to share with clients" },
               ].map((f) => (
@@ -677,10 +738,15 @@ export default function Home() {
                 <div className="flex-1 text-center lg:text-left">
                   <h2 className="text-2xl font-bold text-white mb-1">{result.pageTitle}</h2>
                   <p className="text-indigo-300 text-sm font-mono mb-1">{result.url}</p>
-                  <p className="text-slate-500 text-xs mb-4">
-                    Analyzed {new Date(result.analyzedAt).toLocaleString()}
+                  <p className="text-slate-500 text-xs mb-4 flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span>Analyzed {new Date(result.analyzedAt).toLocaleString()}</span>
                     {result.summary.pageSpeedAvailable && (
-                      <span className="ml-2 text-indigo-400">⚡ Core Web Vitals included</span>
+                      <span className="text-indigo-400">⚡ Core Web Vitals included</span>
+                    )}
+                    {result.summary.domainAuthority && (
+                      <span className="text-emerald-400">
+                        DA {result.summary.domainAuthority.score}/10 via OpenPageRank
+                      </span>
                     )}
                   </p>
                   <div className="flex flex-wrap justify-center lg:justify-start gap-4">
@@ -876,6 +942,12 @@ export default function Home() {
 
             {/* Top Actions Panel */}
             <TopActionsPanel categories={result.categories} />
+
+            {/* Keyword Analysis Panel */}
+            <TopKeywordsPanel
+              keywords={result.topKeywords || []}
+              domainAuthority={result.summary.domainAuthority}
+            />
 
             {/* Detailed Categories */}
             <div className="space-y-4">
