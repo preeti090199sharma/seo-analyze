@@ -29,6 +29,17 @@ export interface PageSpeedData {
   tti: string;
 }
 
+export interface DomainData {
+  domainAuthority: number;  // OpenPageRank 0-10
+  globalRank: number;       // approximate global rank (lower = more popular)
+}
+
+export interface KeywordEntry {
+  word: string;
+  count: number;
+  density: number; // %
+}
+
 export interface AnalysisResult {
   url: string;
   score: number;
@@ -44,6 +55,7 @@ export interface AnalysisResult {
     social: CategoryResult;
     security: CategoryResult;
     performance: CategoryResult;
+    keywords: CategoryResult;
   };
   summary: {
     totalChecks: number;
@@ -52,7 +64,9 @@ export interface AnalysisResult {
     failed: number;
     criticalIssues: string[];
     pageSpeedAvailable: boolean;
+    domainAuthority?: { score: number; rank: number };
   };
+  topKeywords: KeywordEntry[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -69,6 +83,45 @@ function calcCategoryScore(checks: Check[]): number {
     return sum;
   }, 0);
   return Math.round((points / checks.length) * 100);
+}
+
+// ─── Keyword Helpers ──────────────────────────────────────────────────────────
+
+const STOP_WORDS = new Set([
+  "a","an","the","and","or","but","in","on","at","to","for","of","with","by",
+  "from","up","about","into","through","during","is","are","was","were","be",
+  "been","being","have","has","had","do","does","did","will","would","could",
+  "should","may","might","shall","can","it","its","this","that","these","those",
+  "i","me","my","we","our","you","your","he","she","they","their","what",
+  "which","who","not","no","nor","so","yet","also","any","get","got","here",
+  "now","then","there","when","where","while","use","make","like","one","two",
+  "three","first","last","long","little","own","right","big","high","low",
+  "next","only","open","same","see","way","more","most","than","very","just",
+  "as","if","how","all","each","every","both","few","such","too","some",
+  "new","old","good","great","best","free","help","need","want","find",
+]);
+
+function extractKeywords(text: string, limit = 15): KeywordEntry[] {
+  const words = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 3 && !STOP_WORDS.has(w));
+
+  const total = words.length;
+  if (total === 0) return [];
+
+  const freq: Record<string, number> = {};
+  for (const w of words) freq[w] = (freq[w] || 0) + 1;
+
+  return Object.entries(freq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([word, count]) => ({
+      word,
+      count,
+      density: parseFloat(((count / total) * 100).toFixed(1)),
+    }));
 }
 
 // ─── Meta Tags ───────────────────────────────────────────────────────────────
@@ -1409,11 +1462,218 @@ async function analyzeBrokenLinks(
   }
 }
 
+// ─── Keyword Analysis ────────────────────────────────────────────────────────
+
+function analyzeKeywords(
+  $: cheerio.CheerioAPI,
+  url: string,
+  domainData?: DomainData
+): { category: CategoryResult; topKeywords: KeywordEntry[] } {
+  const checks: Check[] = [];
+
+  // ── Extract all visible text ──
+  const titleText = $("title").text().trim();
+  const h1Text = $("h1").first().text().trim();
+  const metaDesc = $('meta[name="description"]').attr("content")?.trim() || "";
+  const bodyText = stripTags($("body").html() || "");
+  const firstParagraphText = $("p").first().text().trim();
+
+  // ── Top keywords from full body ──
+  const topKeywords = extractKeywords(bodyText, 15);
+  const focusKeyword = (() => {
+    // Prefer word appearing prominently in both title and H1
+    if (!titleText && !h1Text) return topKeywords[0]?.word || "";
+    const titleWords = extractKeywords(titleText, 5);
+    const h1Words = extractKeywords(h1Text, 5);
+    const shared = titleWords.find((t) => h1Words.some((h) => h.word === t.word));
+    if (shared) return shared.word;
+    return titleWords[0]?.word || h1Words[0]?.word || topKeywords[0]?.word || "";
+  })();
+
+  // ── Focus Keyword Checks ──
+  if (!focusKeyword) {
+    checks.push({
+      name: "Focus Keyword",
+      status: "warning",
+      priority: "high",
+      message: "Could not detect a clear focus keyword — title and H1 share no common keyword",
+      recommendation: "Align your title and H1 around a single primary keyword phrase",
+    });
+  } else {
+    checks.push({
+      name: "Focus Keyword",
+      status: "pass",
+      priority: "high",
+      message: `Detected focus keyword: "${focusKeyword}"`,
+      value: topKeywords
+        .slice(0, 5)
+        .map((k) => `${k.word} (${k.density}%)`)
+        .join(", "),
+    });
+
+    // Keyword in URL
+    const urlPath = (() => { try { return new URL(url).pathname; } catch { return url; } })();
+    const inUrl = urlPath.toLowerCase().includes(focusKeyword.toLowerCase());
+    checks.push({
+      name: "Keyword in URL",
+      status: inUrl ? "pass" : "warning",
+      priority: "medium",
+      message: inUrl
+        ? `Focus keyword "${focusKeyword}" found in URL path`
+        : `Focus keyword "${focusKeyword}" not found in the URL slug`,
+      recommendation: inUrl
+        ? undefined
+        : `Include your keyword in the URL: /your-keyword-here/`,
+    });
+
+    // Keyword in meta description
+    const inMeta = metaDesc.toLowerCase().includes(focusKeyword.toLowerCase());
+    checks.push({
+      name: "Keyword in Meta Description",
+      status: metaDesc ? (inMeta ? "pass" : "warning") : "fail",
+      priority: "medium",
+      message: !metaDesc
+        ? "No meta description — add one containing your focus keyword"
+        : inMeta
+        ? `Focus keyword "${focusKeyword}" found in meta description`
+        : `Meta description does not contain "${focusKeyword}"`,
+      recommendation: !inMeta
+        ? `Include "${focusKeyword}" naturally in your meta description`
+        : undefined,
+    });
+
+    // Keyword in first 100 words
+    const first100 = firstParagraphText.toLowerCase().split(/\s+/).slice(0, 100).join(" ");
+    const inFirst = first100.includes(focusKeyword.toLowerCase());
+    checks.push({
+      name: "Keyword in First Paragraph",
+      status: inFirst ? "pass" : "warning",
+      priority: "medium",
+      message: inFirst
+        ? `Focus keyword appears in the first paragraph — good for relevance`
+        : `Focus keyword "${focusKeyword}" not found in the first paragraph`,
+      recommendation: inFirst
+        ? undefined
+        : "Mention your focus keyword naturally in the opening paragraph",
+    });
+  }
+
+  // ── Keyword Density ──
+  const focusEntry = topKeywords.find(
+    (k) => k.word === focusKeyword
+  );
+  if (focusKeyword && focusEntry) {
+    const density = focusEntry.density;
+    if (density > 5) {
+      checks.push({
+        name: "Keyword Density",
+        status: "warning",
+        priority: "medium",
+        message: `Keyword "${focusKeyword}" density is ${density}% — possible over-optimisation (stuffing)`,
+        recommendation: "Keep keyword density between 1-3% for natural readability",
+      });
+    } else if (density < 0.5) {
+      checks.push({
+        name: "Keyword Density",
+        status: "warning",
+        priority: "medium",
+        message: `Keyword "${focusKeyword}" appears very rarely (${density}%) — page may lack topical focus`,
+        recommendation: "Naturally mention your keyword more frequently throughout the content",
+      });
+    } else {
+      checks.push({
+        name: "Keyword Density",
+        status: "pass",
+        priority: "medium",
+        message: `Keyword density is ${density}% — within the healthy 0.5–5% range`,
+      });
+    }
+  }
+
+  // ── Heading keyword coverage ──
+  const h2h3Text = $("h2, h3").map((_, el) => $(el).text().toLowerCase()).get().join(" ");
+  const headingKeywordCount = topKeywords.slice(0, 5).filter((k) =>
+    h2h3Text.includes(k.word)
+  ).length;
+
+  if (topKeywords.length > 0) {
+    checks.push({
+      name: "Keyword Coverage in Headings",
+      status: headingKeywordCount >= 2 ? "pass" : "warning",
+      priority: "low",
+      message:
+        headingKeywordCount >= 2
+          ? `${headingKeywordCount} of your top keywords appear in H2/H3 headings — good topical coverage`
+          : `Only ${headingKeywordCount} top keyword(s) in H2/H3 headings — improve topical relevance`,
+      recommendation:
+        headingKeywordCount < 2
+          ? "Include your main topic keywords in section headings (H2/H3)"
+          : undefined,
+    });
+  }
+
+  // ── Domain Authority (OpenPageRank) ──
+  if (domainData) {
+    const da = domainData.domainAuthority;
+    const rank = domainData.globalRank;
+    checks.push({
+      name: "Domain Authority",
+      status: da >= 5 ? "pass" : da >= 2 ? "warning" : "fail",
+      priority: "high",
+      message:
+        da >= 5
+          ? `Domain Authority: ${da}/10 — strong domain trust signal`
+          : da >= 2
+          ? `Domain Authority: ${da}/10 — growing — build more quality backlinks`
+          : `Domain Authority: ${da}/10 — low authority — focus on earning quality backlinks`,
+      value: rank > 0 ? `Global Rank: ~#${rank.toLocaleString()}` : undefined,
+      recommendation:
+        da < 5
+          ? "Earn backlinks from reputable, topically relevant sites to grow domain authority"
+          : undefined,
+    });
+
+    checks.push({
+      name: "Backlink Profile",
+      status: da >= 3 ? "pass" : "warning",
+      priority: "medium",
+      message:
+        da >= 3
+          ? `Backlink profile indicates reasonable link equity (DA: ${da}/10)`
+          : "Low domain authority suggests few quality inbound links",
+      recommendation:
+        da < 3
+          ? "Create shareable content, list in directories, and reach out for guest posts to earn backlinks"
+          : undefined,
+    });
+  } else {
+    checks.push({
+      name: "Domain Authority",
+      status: "warning",
+      priority: "medium",
+      message: "Domain Authority data not available — add OPEN_PAGE_RANK_API_KEY to enable",
+      recommendation:
+        "Get a free API key at openpagerank.com and set OPEN_PAGE_RANK_API_KEY env var",
+    });
+  }
+
+  return {
+    category: {
+      name: "Keywords & Authority",
+      icon: "🔑",
+      score: calcCategoryScore(checks),
+      checks,
+    },
+    topKeywords,
+  };
+}
+
 // ─── Main Analysis Function ──────────────────────────────────────────────────
 
 export async function analyzeSite(
   targetUrl: string,
-  pageSpeedData?: PageSpeedData
+  pageSpeedData?: PageSpeedData,
+  domainData?: DomainData
 ): Promise<AnalysisResult> {
   let url = targetUrl.trim();
   if (!url.startsWith("http://") && !url.startsWith("https://")) {
@@ -1500,6 +1760,7 @@ export async function analyzeSite(
   const social = analyzeSocial($);
   const security = analyzeSecurity(url, responseHeaders);
   const performance = analyzePerformance($, pageSpeedData);
+  const { category: keywords, topKeywords } = analyzeKeywords($, url, domainData);
 
   const categories = {
     meta,
@@ -1511,6 +1772,7 @@ export async function analyzeSite(
     social,
     security,
     performance,
+    keywords,
   };
 
   const allChecks = Object.values(categories).flatMap((c) => c.checks);
@@ -1522,22 +1784,23 @@ export async function analyzeSite(
     .filter((c) => c.status === "fail")
     .map((c) => c.message);
 
-  // Weighted scoring
+  // Weighted scoring — keywords/authority gets 8%, meta stays at 20%
   const categoryWeights: Record<string, number> = {
     meta: 0.20,
-    security: 0.15,
-    technical: 0.13,
-    content: 0.13,
+    security: 0.13,
+    technical: 0.12,
+    content: 0.12,
     performance: 0.12,
-    headings: 0.10,
+    headings: 0.08,
+    keywords: 0.08,
     social: 0.07,
-    images: 0.05,
-    links: 0.05,
+    images: 0.04,
+    links: 0.04,
   };
 
   const totalScore = Math.round(
     Object.entries(categories).reduce((sum, [key, cat]) => {
-      const weight = categoryWeights[key] ?? 0.05;
+      const weight = categoryWeights[key] ?? 0.04;
       return sum + cat.score * weight;
     }, 0)
   );
@@ -1548,6 +1811,7 @@ export async function analyzeSite(
     analyzedAt: new Date().toISOString(),
     pageTitle: $("title").text().trim() || url,
     categories,
+    topKeywords,
     summary: {
       totalChecks: allChecks.length,
       passed,
@@ -1555,6 +1819,9 @@ export async function analyzeSite(
       failed,
       criticalIssues,
       pageSpeedAvailable: !!pageSpeedData,
+      domainAuthority: domainData
+        ? { score: domainData.domainAuthority, rank: domainData.globalRank }
+        : undefined,
     },
   };
 }

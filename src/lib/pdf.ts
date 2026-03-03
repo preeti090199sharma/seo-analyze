@@ -1,6 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import type { AnalysisResult, CategoryResult, Check } from "./analyzer";
+import type { AnalysisResult, CategoryResult, Check, KeywordEntry } from "./analyzer";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -161,6 +161,60 @@ function addCategorySection(
   }
 
   return fy + 4;
+}
+
+// ─── Keyword Table ────────────────────────────────────────────────────────────
+
+function addKeywordSection(doc: jsPDF, keywords: KeywordEntry[], startY: number, domainAuthority?: { score: number; rank: number }): number {
+  if (keywords.length === 0) return startY;
+  let y = startY;
+  if (y > 250) { doc.addPage(); y = 25; }
+
+  // Header
+  doc.setFillColor(30, 41, 59);
+  doc.roundedRect(14, y - 5, 182, 11, 2, 2, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.text("Keyword Analysis", 18, y + 2);
+  if (domainAuthority) {
+    doc.setFontSize(9);
+    doc.text(`Domain Authority: ${domainAuthority.score}/10`, 155, y + 2, { align: "right" });
+  }
+  doc.setTextColor(0, 0, 0);
+  doc.setFont("helvetica", "normal");
+  y += 12;
+
+  const tableBody = keywords.slice(0, 12).map((kw, i) => [
+    `${i + 1}`,
+    kw.word,
+    `${kw.count}`,
+    `${kw.density}%`,
+  ]);
+
+  autoTable(doc, {
+    startY: y,
+    head: [["#", "Keyword", "Count", "Density"]],
+    body: tableBody,
+    theme: "grid",
+    margin: { left: 14, right: 14 },
+    styles: { fontSize: 8, cellPadding: 2.5, lineWidth: 0.1 },
+    headStyles: {
+      fillColor: [30, 41, 59],
+      textColor: [255, 255, 255],
+      fontStyle: "bold",
+      fontSize: 8,
+    },
+    columnStyles: {
+      0: { cellWidth: 10, halign: "center" },
+      1: { cellWidth: 80, fontStyle: "bold" },
+      2: { cellWidth: 30, halign: "center" },
+      3: { cellWidth: 30, halign: "center" },
+    },
+  });
+
+  const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
+  return finalY + 8;
 }
 
 // ─── Priority Action Plan ─────────────────────────────────────────────────────
@@ -330,11 +384,14 @@ export function generatePDF(result: AnalysisResult): jsPDF {
   doc.setFontSize(8);
   doc.text(`Generated: ${new Date(result.analyzedAt).toLocaleString()}`, 18, 38);
 
-  // PageSpeed badge
-  if (result.summary.pageSpeedAvailable) {
+  // Badges line
+  let badgeLine = "";
+  if (result.summary.pageSpeedAvailable) badgeLine += "Core Web Vitals via Google PageSpeed  ";
+  if (result.summary.domainAuthority) badgeLine += `Domain Authority: ${result.summary.domainAuthority.score}/10`;
+  if (badgeLine) {
     doc.setFontSize(7);
     doc.setTextColor(165, 180, 252);
-    doc.text("Core Web Vitals powered by Google PageSpeed Insights", 18, 46);
+    doc.text(safe(badgeLine.trim()), 18, 46);
   }
 
   // Contact line
@@ -383,7 +440,7 @@ export function generatePDF(result: AnalysisResult): jsPDF {
   doc.setFontSize(7.5);
   doc.setTextColor(100, 116, 139);
   doc.text(
-    "Score is weighted: Meta 20%, Security 15%, Technical 13%, Content 13%, Performance 12%, Headings 10%, Social 7%, Images 5%, Links 5%",
+    "Weighted: Meta 20%, Security 13%, Technical 12%, Content 12%, Performance 12%, Headings 8%, Keywords 8%, Social 7%, Images 4%, Links 4%",
     14, y + 4
   );
   doc.setTextColor(0, 0, 0);
@@ -424,6 +481,12 @@ export function generatePDF(result: AnalysisResult): jsPDF {
 
   // ─── Priority Action Plan ──────────────────────────────────────────
   y = addPriorityActionPlan(doc, result, y);
+
+  // ─── Keyword Analysis Table ────────────────────────────────────────
+  if (result.topKeywords && result.topKeywords.length > 0) {
+    if (y > 240) { doc.addPage(); y = 25; }
+    y = addKeywordSection(doc, result.topKeywords, y, result.summary.domainAuthority);
+  }
 
   // ─── Detailed Analysis ─────────────────────────────────────────────
   if (y > 240) { doc.addPage(); y = 25; }
