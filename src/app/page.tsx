@@ -443,6 +443,195 @@ function CompareBar({ label, score, isLeft }: { label: string; score: number; is
   );
 }
 
+// ─── AI Suggestions Panel ─────────────────────────────────────────────────────
+
+interface AiSuggestions {
+  metaDescriptions: string[];
+  lsiKeywords: string[];
+  titleSuggestion: string;
+  contentTip: string;
+}
+
+function AiSuggestPanel({ result }: { result: AnalysisResult }) {
+  const [loading, setLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<AiSuggestions | null>(null);
+  const [error, setError] = useState("");
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+
+  const metaCheck = result.categories.meta?.checks.find(
+    (c) => c.name === "Meta Description"
+  );
+  const h1Check = result.categories.headings?.checks.find(
+    (c) => c.name === "Primary H1"
+  );
+
+  const handleGenerate = async () => {
+    setLoading(true);
+    setError("");
+    setSuggestions(null);
+    try {
+      const res = await fetch("/api/ai-suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pageTitle: result.pageTitle,
+          metaDescription: metaCheck?.value ?? "",
+          h1Text: h1Check?.value ?? "",
+          keywords: (result.topKeywords ?? []).map((k) => k.word),
+          pageUrl: result.url,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to generate suggestions");
+        return;
+      }
+      setSuggestions(data);
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopy = (text: string, idx: number) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedIdx(idx);
+      setTimeout(() => setCopiedIdx(null), 2000);
+    });
+  };
+
+  return (
+    <div className="glass rounded-2xl p-6 mb-6 animate-fade-in">
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <span className="text-xl">✨</span>
+        <h3 className="text-lg font-bold text-white">AI SEO Suggestions</h3>
+        <span className="text-xs text-slate-500 ml-1">powered by Gemini</span>
+        {!suggestions && !loading && (
+          <button
+            onClick={handleGenerate}
+            className="ml-auto flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold rounded-xl transition-all active:scale-[0.98]"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            Generate AI Suggestions
+          </button>
+        )}
+        {suggestions && !loading && (
+          <button
+            onClick={handleGenerate}
+            className="ml-auto text-xs text-slate-500 hover:text-slate-300 transition-colors"
+          >
+            Regenerate ↻
+          </button>
+        )}
+      </div>
+
+      {!suggestions && !loading && !error && (
+        <p className="text-sm text-slate-400">
+          Click the button to get AI-generated meta descriptions, keyword ideas, and content tips tailored for this page.
+        </p>
+      )}
+
+      {loading && (
+        <div className="flex items-center gap-3 py-4 text-slate-400 text-sm">
+          <div className="w-5 h-5 border-2 border-violet-500/30 border-t-violet-400 rounded-full animate-spin shrink-0" />
+          Gemini is analyzing your page...
+        </div>
+      )}
+
+      {error && (
+        <p className="text-sm text-red-400 bg-red-500/10 rounded-lg px-4 py-3">{error}</p>
+      )}
+
+      {suggestions && (
+        <div className="space-y-5">
+          {/* Meta Description Suggestions */}
+          <div>
+            <p className="text-xs font-semibold text-violet-400 uppercase tracking-wider mb-2">
+              Meta Description Options
+            </p>
+            <div className="space-y-2">
+              {suggestions.metaDescriptions?.map((desc, i) => (
+                <div key={i} className="bg-white/5 rounded-xl p-3 border border-white/5 flex items-start gap-3">
+                  <span className="text-xs text-slate-500 font-bold mt-0.5 shrink-0 w-4">{i + 1}</span>
+                  <p className="text-sm text-slate-200 flex-1">{desc}</p>
+                  <div className="shrink-0 flex flex-col items-end gap-1">
+                    <span className={`text-xs ${desc.length > 160 ? "text-red-400" : desc.length >= 140 ? "text-emerald-400" : "text-amber-400"}`}>
+                      {desc.length}c
+                    </span>
+                    <button
+                      onClick={() => handleCopy(desc, i)}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                    >
+                      {copiedIdx === i ? "Copied ✓" : "Copy"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* LSI Keywords */}
+          {suggestions.lsiKeywords?.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-violet-400 uppercase tracking-wider mb-2">
+                Related Keywords to Target
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {suggestions.lsiKeywords.map((kw, i) => (
+                  <span
+                    key={i}
+                    className="px-3 py-1 bg-violet-500/15 border border-violet-500/25 text-violet-300 text-xs rounded-full"
+                  >
+                    {kw}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Title Suggestion */}
+          {suggestions.titleSuggestion && (
+            <div>
+              <p className="text-xs font-semibold text-violet-400 uppercase tracking-wider mb-2">
+                Improved Page Title
+              </p>
+              <div className="bg-white/5 rounded-xl p-3 border border-white/5 flex items-center gap-3">
+                <p className="text-sm text-slate-200 flex-1">{suggestions.titleSuggestion}</p>
+                <div className="shrink-0 flex flex-col items-end gap-1">
+                  <span className={`text-xs ${suggestions.titleSuggestion.length > 60 ? "text-red-400" : "text-emerald-400"}`}>
+                    {suggestions.titleSuggestion.length}c
+                  </span>
+                  <button
+                    onClick={() => handleCopy(suggestions.titleSuggestion, 99)}
+                    className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                  >
+                    {copiedIdx === 99 ? "Copied ✓" : "Copy"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Content Tip */}
+          {suggestions.contentTip && (
+            <div>
+              <p className="text-xs font-semibold text-violet-400 uppercase tracking-wider mb-2">
+                Content Tip
+              </p>
+              <p className="text-sm text-slate-300 bg-white/5 rounded-xl p-3 border border-white/5 italic">
+                💡 {suggestions.contentTip}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function Home() {
@@ -948,6 +1137,9 @@ export default function Home() {
               keywords={result.topKeywords || []}
               domainAuthority={result.summary.domainAuthority}
             />
+
+            {/* AI Suggestions Panel */}
+            <AiSuggestPanel result={result} />
 
             {/* Detailed Categories */}
             <div className="space-y-4">
