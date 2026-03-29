@@ -74,7 +74,12 @@ export interface AnalysisResult {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function stripTags(html: string): string {
-  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  return html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function calcCategoryScore(checks: Check[]): number {
@@ -101,6 +106,24 @@ const STOP_WORDS = new Set([
   "next","only","open","same","see","way","more","most","than","very","just",
   "as","if","how","all","each","every","both","few","such","too","some",
   "new","old","good","great","best","free","help","need","want","find",
+  // JS/code keywords (from bundled scripts leaking into body text)
+  "null","undefined","true","false","function","class","const","let","var",
+  "return","import","export","default","require","module","typeof","instanceof",
+  "static","async","await","void","yield","extends","super","implements",
+  "interface","enum","type","declare","namespace","abstract","override",
+  "public","private","protected","readonly","keyof","infer","never",
+  "classname","chunks","webpack","runtime","polyfill","vendor","bundle",
+  "props","state","refs","hook","hooks","usestate","useeffect","usememo",
+  "usecallback","useref","context","provider","consumer","children",
+  "event","error","value","index","array","object","string","number",
+  "boolean","promise","callback","params","config","options","utils",
+  "data","item","items","list","node","element","component","container",
+  "wrapper","style","styles","theme","color","size","width","height",
+  "padding","margin","font","text","icon","image","button","input","form",
+  "page","path","href","link","router","route","query","hash","host",
+  "csrf","token","auth","user","role","permission","session","cookie",
+  "http","https","json","html","body","head","meta","title","lang",
+  "true","false","null","void","this","self","window","document","global",
 ]);
 
 function extractKeywords(text: string, limit = 15): KeywordEntry[] {
