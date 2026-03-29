@@ -119,21 +119,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Optional: Google PageSpeed Insights API
+    // Google PageSpeed Insights API — works free without key (25k/day limit)
     let pageSpeedData: PageSpeedData | undefined;
     const apiKey = process.env.GOOGLE_PAGESPEED_API_KEY;
-    if (apiKey) {
-      try {
-        const fullUrl = cleanUrl.startsWith("http") ? cleanUrl : "https://" + cleanUrl;
-        const psUrl = `https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=mobile&key=${apiKey}`;
-        const psRes = await fetch(psUrl, { signal: AbortSignal.timeout(15000) });
-        if (psRes.ok) {
-          const psJson = await psRes.json();
-          pageSpeedData = extractPageSpeedData(psJson);
-        }
-      } catch {
-        // Silent fallback — analysis continues without PageSpeed data
+    try {
+      const fullUrl = cleanUrl.startsWith("http") ? cleanUrl : "https://" + cleanUrl;
+      const keyParam = apiKey ? `&key=${apiKey}` : "";
+      const psUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=mobile${keyParam}`;
+      const psRes = await fetch(psUrl, { signal: AbortSignal.timeout(15000) });
+      if (psRes.ok) {
+        const psJson = await psRes.json();
+        pageSpeedData = extractPageSpeedData(psJson);
       }
+    } catch {
+      // Silent fallback — analysis continues without PageSpeed data
     }
 
     // Optional: OpenPageRank API for Domain Authority
