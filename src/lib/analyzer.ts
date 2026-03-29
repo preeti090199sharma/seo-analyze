@@ -56,6 +56,8 @@ export interface AnalysisResult {
     security: CategoryResult;
     performance: CategoryResult;
     keywords: CategoryResult;
+    techStack: CategoryResult;
+    accessibility: CategoryResult;
   };
   summary: {
     totalChecks: number;
@@ -1668,6 +1670,482 @@ function analyzeKeywords(
   };
 }
 
+// ─── Tech Stack Detection ────────────────────────────────────────────────────
+
+function analyzeTechStack(
+  $: cheerio.CheerioAPI,
+  rawHtml: string,
+  headers: Record<string, string>,
+  url: string
+): CategoryResult {
+  const checks: Check[] = [];
+  const html = rawHtml.toLowerCase();
+
+  const inHtml = (p: string) => html.includes(p.toLowerCase());
+  const inSrc = (p: string) => {
+    let found = false;
+    $("script[src], link[href]").each((_, el) => {
+      const s = ($(el).attr("src") || $(el).attr("href") || "").toLowerCase();
+      if (s.includes(p.toLowerCase())) found = true;
+    });
+    return found;
+  };
+
+  const generator = ($('meta[name="generator"]').attr("content") || "").toLowerCase();
+
+  // ── CMS / Website Builders ──
+
+  const isWordPress =
+    inHtml("wp-content") || inHtml("wp-includes") || generator.includes("wordpress");
+  if (isWordPress) {
+    const ver = generator.match(/wordpress\s*([\d.]+)/)?.[1];
+    checks.push({
+      name: "CMS: WordPress",
+      status: "pass",
+      priority: "low",
+      message: `WordPress detected${ver ? ` (v${ver})` : ""} — world's most popular CMS`,
+      recommendation: "Install Yoast SEO or Rank Math plugin for complete SEO control.",
+    });
+  }
+
+  const isWix =
+    inHtml("wix.com") || inHtml("wixsite.com") || inHtml("_wixcidx") ||
+    !!headers["x-wix-request-id"];
+  if (isWix) {
+    checks.push({
+      name: "CMS: Wix",
+      status: "warning",
+      priority: "high",
+      message: "Wix website builder detected — limited SEO flexibility",
+      recommendation:
+        "Wix restricts URL structure, advanced technical SEO, and server-side control. Consider WordPress or custom CMS for serious SEO growth.",
+    });
+  }
+
+  const isSquarespace =
+    inHtml("squarespace.com") || inHtml("static1.squarespace.com");
+  if (isSquarespace) {
+    checks.push({
+      name: "CMS: Squarespace",
+      status: "warning",
+      priority: "medium",
+      message: "Squarespace detected — moderate SEO control",
+      recommendation:
+        "Set custom meta tags, use clean URL slugs, and ensure sitemap is submitted to Google Search Console.",
+    });
+  }
+
+  const isWebflow =
+    inHtml("webflow.com") || inHtml("wf-form-") || inHtml("webflow.js");
+  if (isWebflow) {
+    checks.push({
+      name: "CMS: Webflow",
+      status: "pass",
+      priority: "low",
+      message: "Webflow detected — good SEO control with visual editing",
+      recommendation: "Enable SEO settings per CMS collection, use clean URL slugs, and submit sitemap.",
+    });
+  }
+
+  const isShopify =
+    inHtml("cdn.shopify.com") || inHtml("shopify.theme") || inHtml("shopifycloud.com");
+  if (isShopify) {
+    checks.push({
+      name: "E-commerce: Shopify",
+      status: "pass",
+      priority: "low",
+      message: "Shopify e-commerce platform detected",
+      recommendation:
+        "Install Plug In SEO or Smart SEO app. Optimize product titles, descriptions, and image alt texts for better rankings.",
+    });
+  }
+
+  if (generator.includes("drupal") || inHtml("/sites/default/files/")) {
+    checks.push({
+      name: "CMS: Drupal",
+      status: "pass",
+      priority: "low",
+      message: "Drupal CMS detected — enterprise-grade, strong SEO control",
+      recommendation: "Use Metatag and Pathauto modules for automated SEO optimization.",
+    });
+  }
+
+  if (generator.includes("joomla") || inHtml("/media/joomla_core_images/")) {
+    checks.push({
+      name: "CMS: Joomla",
+      status: "pass",
+      priority: "low",
+      message: "Joomla CMS detected",
+      recommendation: "Use sh404SEF or JSitemap extensions for better SEO control.",
+    });
+  }
+
+  if (generator.includes("ghost") || inHtml("ghost.io")) {
+    checks.push({
+      name: "CMS: Ghost",
+      status: "pass",
+      priority: "low",
+      message: "Ghost CMS detected — great for content-focused blogs with built-in SEO",
+    });
+  }
+
+  // ── JavaScript Frameworks ──
+
+  const isNextJs =
+    inHtml("__next_data__") || inHtml("/_next/static/") || inHtml("next/dist");
+  if (isNextJs) {
+    checks.push({
+      name: "Framework: Next.js",
+      status: "pass",
+      priority: "low",
+      message: "Next.js detected — excellent for SEO (SSR + SSG support)",
+      recommendation:
+        "Use next/head for meta tags, generate dynamic sitemaps, and use Image component for optimized images.",
+    });
+  }
+
+  const isGatsby = inHtml("___gatsby") || inHtml("gatsby-");
+  if (isGatsby) {
+    checks.push({
+      name: "Framework: Gatsby",
+      status: "pass",
+      priority: "low",
+      message: "Gatsby (React static site generator) detected — great for SEO",
+      recommendation: "Ensure gatsby-plugin-sitemap and gatsby-plugin-react-helmet are configured.",
+    });
+  }
+
+  const isNuxt = inHtml("__nuxt") || inHtml("nuxt.js") || inSrc("nuxt");
+  if (isNuxt) {
+    checks.push({
+      name: "Framework: Nuxt.js",
+      status: "pass",
+      priority: "low",
+      message: "Nuxt.js (Vue SSR) detected — good for SEO",
+      recommendation: "Use @nuxtjs/sitemap and configure useHead() for dynamic meta tags.",
+    });
+  }
+
+  const isAngular =
+    $("[ng-version]").length > 0 || inSrc("angular") || inHtml("ng-version");
+  if (isAngular) {
+    checks.push({
+      name: "Framework: Angular",
+      status: "warning",
+      priority: "high",
+      message: "Angular SPA detected — SEO limited without server-side rendering",
+      recommendation:
+        "Implement Angular Universal for SSR or pre-rendering to ensure Google can index your content properly.",
+    });
+  }
+
+  const isVue = inHtml("data-v-") || inHtml("__vue__") || inSrc("vue.min") || inSrc("vue.js");
+  if (isVue && !isNuxt) {
+    checks.push({
+      name: "Framework: Vue.js",
+      status: "warning",
+      priority: "medium",
+      message: "Vue.js SPA detected — may have indexing issues without SSR",
+      recommendation: "Migrate to Nuxt.js for server-side rendering to improve Google indexing.",
+    });
+  }
+
+  const isSvelte = inHtml("__svelte") || inSrc("svelte");
+  if (isSvelte) {
+    checks.push({
+      name: "Framework: Svelte/SvelteKit",
+      status: "pass",
+      priority: "low",
+      message: "Svelte/SvelteKit detected — lightweight with good SEO potential",
+    });
+  }
+
+  // Plain React SPA (not Next/Gatsby/Svelte)
+  const isReactSpa =
+    !isNextJs && !isGatsby && !isSvelte &&
+    (inHtml("data-reactroot") || inHtml("react-dom") || inSrc("react.production") || inSrc("react-dom"));
+  if (isReactSpa) {
+    checks.push({
+      name: "Framework: React (SPA)",
+      status: "warning",
+      priority: "high",
+      message: "React SPA detected — Google may not index client-rendered content properly",
+      recommendation:
+        "Migrate to Next.js for server-side rendering. Pure React SPAs are poorly indexed and rank lower.",
+    });
+  }
+
+  // ── Analytics ──
+
+  const hasGA4 = inHtml("gtag('config', 'g-") || inHtml('gtag("config", "g-');
+  const hasUA = inHtml("ga('create'") || inHtml('ga("create"') || inHtml("analytics.js");
+  const hasGTM = inHtml("googletagmanager.com/gtm.js") || inHtml("gtm.js");
+
+  if (hasGA4) {
+    checks.push({
+      name: "Analytics: Google Analytics 4",
+      status: "pass",
+      priority: "low",
+      message: "GA4 detected — tracking SEO performance correctly",
+    });
+  } else if (hasUA) {
+    checks.push({
+      name: "Analytics: Universal Analytics (outdated)",
+      status: "fail",
+      priority: "critical",
+      message: "Old Universal Analytics detected — stopped collecting data in July 2023",
+      recommendation: "Migrate to Google Analytics 4 (GA4) immediately. UA is completely discontinued.",
+    });
+  } else if (!hasGTM) {
+    checks.push({
+      name: "Analytics: No Tracking Found",
+      status: "warning",
+      priority: "high",
+      message: "No Google Analytics or tracking found — cannot measure SEO results",
+      recommendation: "Install Google Analytics 4 to track organic traffic, rankings, and conversions.",
+    });
+  }
+
+  if (hasGTM) {
+    checks.push({
+      name: "Analytics: Google Tag Manager",
+      status: "pass",
+      priority: "low",
+      message: "Google Tag Manager detected — centralized tag management",
+    });
+  }
+
+  if (inHtml("connect.facebook.net") && inHtml("fbq(")) {
+    checks.push({
+      name: "Analytics: Facebook Pixel",
+      status: "pass",
+      priority: "low",
+      message: "Facebook Pixel detected — good for paid campaign tracking",
+    });
+  }
+
+  if (inHtml("hotjar.com") || inHtml("hjid:")) {
+    checks.push({
+      name: "Analytics: Hotjar",
+      status: "pass",
+      priority: "low",
+      message: "Hotjar detected — heatmaps and session recordings enabled",
+    });
+  }
+
+  if (inHtml("clarity.ms") || inHtml("microsoft clarity")) {
+    checks.push({
+      name: "Analytics: Microsoft Clarity",
+      status: "pass",
+      priority: "low",
+      message: "Microsoft Clarity detected — free heatmaps and session recordings",
+    });
+  }
+
+  // ── Hosting / CDN ──
+
+  if (headers["x-vercel-id"] || headers["x-vercel-cache"]) {
+    checks.push({
+      name: "Hosting: Vercel",
+      status: "pass",
+      priority: "low",
+      message: "Hosted on Vercel — global edge CDN, excellent performance for SEO",
+    });
+  } else if (headers["x-netlify-id"] || (headers["server"] || "").includes("netlify")) {
+    checks.push({
+      name: "Hosting: Netlify",
+      status: "pass",
+      priority: "low",
+      message: "Hosted on Netlify — fast global CDN",
+    });
+  } else if (url.includes("github.io")) {
+    checks.push({
+      name: "Hosting: GitHub Pages",
+      status: "warning",
+      priority: "medium",
+      message: "GitHub Pages detected — limited server-side SEO capabilities",
+      recommendation: "Consider Vercel or Netlify for better performance, custom headers, and SSR support.",
+    });
+  }
+
+  if (headers["cf-ray"]) {
+    checks.push({
+      name: "CDN: Cloudflare",
+      status: "pass",
+      priority: "low",
+      message: "Cloudflare CDN detected — fast global delivery + DDoS protection",
+      recommendation: "Enable Cloudflare's Page Rules to cache static assets and improve page speed scores.",
+    });
+  } else if (headers["x-amz-cf-id"] || (headers["server"] || "").includes("cloudfront")) {
+    checks.push({
+      name: "CDN: AWS CloudFront",
+      status: "pass",
+      priority: "low",
+      message: "AWS CloudFront CDN detected — reliable global delivery",
+    });
+  }
+
+  const server = (headers["server"] || "").toLowerCase();
+  if (server.includes("nginx")) {
+    checks.push({ name: "Server: Nginx", status: "pass", priority: "low", message: "Nginx web server — fast and SEO-friendly" });
+  } else if (server.includes("apache")) {
+    checks.push({ name: "Server: Apache", status: "pass", priority: "low", message: "Apache web server detected" });
+  }
+
+  const xpb = (headers["x-powered-by"] || "").toLowerCase();
+  if (xpb.includes("php")) {
+    checks.push({ name: "Backend: PHP", status: "pass", priority: "low", message: `PHP backend detected` });
+  } else if (xpb.includes("asp.net") || xpb.includes("aspnet")) {
+    checks.push({ name: "Backend: ASP.NET", status: "pass", priority: "low", message: "ASP.NET backend detected" });
+  } else if (xpb.includes("node") || xpb.includes("express")) {
+    checks.push({ name: "Backend: Node.js", status: "pass", priority: "low", message: "Node.js backend detected" });
+  }
+
+  // Nothing detected fallback
+  if (checks.length === 0) {
+    checks.push({
+      name: "Tech Stack",
+      status: "warning",
+      priority: "low",
+      message: "Could not detect technology stack — site may use custom/obfuscated code",
+      recommendation: "Use browser extension Wappalyzer for detailed technology fingerprinting.",
+    });
+  }
+
+  return { name: "Tech Stack", icon: "🔧", score: calcCategoryScore(checks), checks };
+}
+
+// ─── Accessibility ────────────────────────────────────────────────────────────
+
+function analyzeAccessibility($: cheerio.CheerioAPI): CategoryResult {
+  const checks: Check[] = [];
+
+  // Skip navigation link
+  const skipNav =
+    $('a[href="#main"], a[href="#content"], a[href="#maincontent"]').length > 0 ||
+    $('a').filter((_, el) => /skip/i.test($(el).text())).length > 0;
+  checks.push({
+    name: "Skip Navigation",
+    status: skipNav ? "pass" : "warning",
+    priority: "medium",
+    message: skipNav
+      ? "Skip navigation link found — good for keyboard/screen reader users"
+      : "No skip navigation link — keyboard users must tab through entire menu",
+    recommendation: !skipNav
+      ? 'Add a <a href="#main-content">Skip to main content</a> link as the first focusable element'
+      : undefined,
+  });
+
+  // ARIA landmarks
+  const mainLandmark = $("main, [role='main']").length;
+  const navLandmark = $("nav, [role='navigation']").length;
+  const hasLandmarks = mainLandmark > 0 && navLandmark > 0;
+  checks.push({
+    name: "ARIA Landmarks",
+    status: hasLandmarks ? "pass" : "warning",
+    priority: "medium",
+    message: hasLandmarks
+      ? `ARIA landmarks found: <main> and <nav> present`
+      : `Missing ARIA landmarks (main: ${mainLandmark}, nav: ${navLandmark})`,
+    recommendation: !hasLandmarks
+      ? "Add <main>, <nav>, <header>, <footer> semantic HTML elements for screen reader navigation"
+      : undefined,
+  });
+
+  // Image alt texts (accessibility perspective)
+  const imgs = $("img");
+  const missingAlt = imgs.filter((_, el) => $(el).attr("alt") === undefined).length;
+  checks.push({
+    name: "Image Alt Texts",
+    status: missingAlt === 0 ? "pass" : missingAlt <= 2 ? "warning" : "fail",
+    priority: missingAlt > 0 ? "high" : "low",
+    message:
+      missingAlt === 0
+        ? "All images have alt attributes — accessible for screen readers"
+        : `${missingAlt} image(s) missing alt text — inaccessible to screen readers`,
+    recommendation:
+      missingAlt > 0 ? "Add descriptive alt text to all informational images" : undefined,
+  });
+
+  // Form labels
+  const inputs = $("input:not([type='hidden']):not([type='submit']):not([type='button'])");
+  let unlabeledInputs = 0;
+  inputs.each((_, el) => {
+    const id = $(el).attr("id");
+    const hasLabel = id ? $(`label[for="${id}"]`).length > 0 : false;
+    const hasAriaLabel = $(el).attr("aria-label") || $(el).attr("aria-labelledby");
+    const isInsideLabel = $(el).closest("label").length > 0;
+    if (!hasLabel && !hasAriaLabel && !isInsideLabel) unlabeledInputs++;
+  });
+  if (inputs.length > 0) {
+    checks.push({
+      name: "Form Labels",
+      status: unlabeledInputs === 0 ? "pass" : "warning",
+      priority: "medium",
+      message:
+        unlabeledInputs === 0
+          ? "All form inputs have labels — screen reader accessible"
+          : `${unlabeledInputs} input(s) missing labels — inaccessible to screen readers`,
+      recommendation:
+        unlabeledInputs > 0
+          ? "Add <label for='inputId'> or aria-label attribute to all form inputs"
+          : undefined,
+    });
+  }
+
+  // Buttons without text
+  const emptyButtons = $("button").filter((_, el) => {
+    const text = $(el).text().trim();
+    const ariaLabel = $(el).attr("aria-label");
+    const title = $(el).attr("title");
+    return !text && !ariaLabel && !title;
+  }).length;
+  if ($("button").length > 0) {
+    checks.push({
+      name: "Button Labels",
+      status: emptyButtons === 0 ? "pass" : "warning",
+      priority: "medium",
+      message:
+        emptyButtons === 0
+          ? "All buttons have accessible labels"
+          : `${emptyButtons} button(s) have no text or aria-label`,
+      recommendation:
+        emptyButtons > 0 ? "Add aria-label or visible text to all icon-only buttons" : undefined,
+    });
+  }
+
+  // Language attribute (also checked in technical but important for accessibility)
+  const lang = $("html").attr("lang");
+  checks.push({
+    name: "Language Declaration",
+    status: lang ? "pass" : "fail",
+    priority: lang ? "low" : "high",
+    message: lang
+      ? `Page language declared as "${lang}" — screen readers use correct pronunciation`
+      : "No lang attribute — screen readers cannot determine correct language",
+    recommendation: !lang ? 'Add lang attribute to <html>: <html lang="en">' : undefined,
+  });
+
+  // Focus indicators (check for outline:none without replacement)
+  const hasOutlineNone =
+    $("style").filter((_, el) =>
+      $(el).html()?.includes("outline: none") || $(el).html()?.includes("outline:none") || false
+    ).length > 0;
+  checks.push({
+    name: "Focus Indicators",
+    status: hasOutlineNone ? "warning" : "pass",
+    priority: "medium",
+    message: hasOutlineNone
+      ? "CSS removes focus outlines — keyboard users cannot see focused elements"
+      : "No aggressive focus removal detected",
+    recommendation: hasOutlineNone
+      ? "Never use outline:none without providing a custom :focus style. Keyboard users rely on visible focus."
+      : undefined,
+  });
+
+  return { name: "Accessibility", icon: "♿", score: calcCategoryScore(checks), checks };
+}
+
 // ─── Main Analysis Function ──────────────────────────────────────────────────
 
 export async function analyzeSite(
@@ -1761,6 +2239,8 @@ export async function analyzeSite(
   const security = analyzeSecurity(url, responseHeaders);
   const performance = analyzePerformance($, pageSpeedData);
   const { category: keywords, topKeywords } = analyzeKeywords($, url, domainData);
+  const techStack = analyzeTechStack($, html, responseHeaders, url);
+  const accessibility = analyzeAccessibility($);
 
   const categories = {
     meta,
@@ -1773,6 +2253,8 @@ export async function analyzeSite(
     security,
     performance,
     keywords,
+    techStack,
+    accessibility,
   };
 
   const allChecks = Object.values(categories).flatMap((c) => c.checks);
@@ -1786,16 +2268,18 @@ export async function analyzeSite(
 
   // Weighted scoring — keywords/authority gets 8%, meta stays at 20%
   const categoryWeights: Record<string, number> = {
-    meta: 0.20,
-    security: 0.13,
-    technical: 0.12,
-    content: 0.12,
-    performance: 0.12,
+    meta: 0.18,
+    security: 0.12,
+    technical: 0.11,
+    content: 0.11,
+    performance: 0.11,
     headings: 0.08,
     keywords: 0.08,
     social: 0.07,
-    images: 0.04,
-    links: 0.04,
+    accessibility: 0.06,
+    techStack: 0.04,
+    images: 0.02,
+    links: 0.02,
   };
 
   const totalScore = Math.round(
