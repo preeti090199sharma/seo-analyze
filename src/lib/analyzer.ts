@@ -127,19 +127,36 @@ const STOP_WORDS = new Set([
 ]);
 
 function extractKeywords(text: string, limit = 15): KeywordEntry[] {
-  const words = text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((w) => w.length > 3 && !STOP_WORDS.has(w));
-
-  const total = words.length;
+  const cleaned = text.toLowerCase().replace(/[^a-z0-9\s]/g, " ");
+  const allWords = cleaned.split(/\s+/).filter((w) => w.length > 0);
+  const total = allWords.filter((w) => w.length > 3 && !STOP_WORDS.has(w)).length;
   if (total === 0) return [];
 
-  const freq: Record<string, number> = {};
-  for (const w of words) freq[w] = (freq[w] || 0) + 1;
+  // Single keywords (5+ chars to filter noise like "boro", "park")
+  const singleFreq: Record<string, number> = {};
+  for (const w of allWords) {
+    if (w.length >= 5 && !STOP_WORDS.has(w)) {
+      singleFreq[w] = (singleFreq[w] || 0) + 1;
+    }
+  }
 
-  return Object.entries(freq)
+  // Bigrams — two consecutive meaningful words (both 4+ chars, neither a stop word)
+  const bigramFreq: Record<string, number> = {};
+  for (let i = 0; i < allWords.length - 1; i++) {
+    const a = allWords[i], b = allWords[i + 1];
+    if (a.length >= 4 && b.length >= 4 && !STOP_WORDS.has(a) && !STOP_WORDS.has(b)) {
+      const bigram = `${a} ${b}`;
+      bigramFreq[bigram] = (bigramFreq[bigram] || 0) + 1;
+    }
+  }
+
+  // Combine: only include bigrams that appear 2+ times (meaningful phrases)
+  const combined: Record<string, number> = { ...singleFreq };
+  for (const [bigram, count] of Object.entries(bigramFreq)) {
+    if (count >= 2) combined[bigram] = count;
+  }
+
+  return Object.entries(combined)
     .sort((a, b) => b[1] - a[1])
     .slice(0, limit)
     .map(([word, count]) => ({

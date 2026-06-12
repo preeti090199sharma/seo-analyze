@@ -159,14 +159,13 @@ function TopKeywordsPanel({ keywords, domainAuthority, pageMeta }: {
   domainAuthority?: { score: number; rank: number };
   pageMeta?: { title: string; description: string; h1: string; url: string };
 }) {
-  const [showCoverage, setShowCoverage] = useState(false);
   if (keywords.length === 0) return null;
 
   const top = keywords.slice(0, 10);
   const maxCount = top[0]?.count || 1;
 
   const coverage = pageMeta
-    ? top.slice(0, 6).map((kw) => {
+    ? top.slice(0, 8).map((kw) => {
         const kl = kw.word.toLowerCase();
         return {
           word: kw.word,
@@ -180,18 +179,11 @@ function TopKeywordsPanel({ keywords, domainAuthority, pageMeta }: {
 
   return (
     <div className="glass rounded-2xl p-6 mb-6 animate-fade-in">
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-5 flex-wrap">
         <span className="text-xl">🔑</span>
         <h3 className="text-lg font-bold text-white">Keyword Analysis</h3>
-        {pageMeta && (
-          <button
-            onClick={() => setShowCoverage(!showCoverage)}
-            className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors border border-indigo-500/30 px-2 py-0.5 rounded-full"
-          >
-            {showCoverage ? "Hide Coverage" : "Show Coverage"}
-          </button>
-        )}
-        {domainAuthority && (
+        {domainAuthority ? (
           <span className={`ml-auto inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
             domainAuthority.score >= 5
               ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
@@ -201,77 +193,86 @@ function TopKeywordsPanel({ keywords, domainAuthority, pageMeta }: {
           }`}>
             DA {domainAuthority.score}/10
             {domainAuthority.rank > 0 && (
-              <span className="text-slate-400 font-normal">· Rank #{domainAuthority.rank.toLocaleString()}</span>
+              <span className="text-slate-400 font-normal ml-1">· #{domainAuthority.rank.toLocaleString()} global</span>
             )}
           </span>
-        )}
-        {!domainAuthority && (
-          <span className="ml-auto text-xs text-slate-500">
-            Add <code className="text-indigo-400">OPEN_PAGE_RANK_API_KEY</code> for Domain Authority
-          </span>
+        ) : (
+          <span className="ml-auto text-[11px] text-slate-600 italic">DA unavailable</span>
         )}
       </div>
 
-      {/* Coverage Table */}
-      {showCoverage && coverage.length > 0 && (
-        <div className="mb-5 overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="text-slate-500 border-b border-white/5">
-                <th className="text-left pb-2 font-medium">Keyword</th>
-                <th className="text-center pb-2 font-medium w-14">Title</th>
-                <th className="text-center pb-2 font-medium w-14">Desc</th>
-                <th className="text-center pb-2 font-medium w-14">H1</th>
-                <th className="text-center pb-2 font-medium w-14">URL</th>
-                <th className="text-center pb-2 font-medium w-16">Score</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {coverage.map((row) => {
-                const covered = [row.inTitle, row.inDesc, row.inH1, row.inUrl].filter(Boolean).length;
-                const pct = Math.round((covered / 4) * 100);
-                return (
-                  <tr key={row.word} className="hover:bg-white/5">
-                    <td className="py-2 font-mono text-white pr-3">{row.word}</td>
-                    <td className="py-2 text-center"><CoverageCell value={row.inTitle} /></td>
-                    <td className="py-2 text-center"><CoverageCell value={row.inDesc} /></td>
-                    <td className="py-2 text-center"><CoverageCell value={row.inH1} /></td>
-                    <td className="py-2 text-center"><CoverageCell value={row.inUrl} /></td>
-                    <td className="py-2 text-center">
-                      <span className={`font-bold ${pct === 100 ? "text-emerald-400" : pct >= 50 ? "text-amber-400" : "text-red-400"}`}>
-                        {pct}%
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <p className="text-xs text-slate-600 mt-2">Coverage across: Title · Meta Description · H1 · URL</p>
-        </div>
-      )}
-
-      {/* Frequency Bars */}
-      <div className="space-y-2">
-        {top.map((kw, i) => (
-          <div key={kw.word} className="flex items-center gap-3">
-            <span className="text-xs text-slate-500 w-4 text-right">{i + 1}</span>
-            <span className="text-sm text-white font-mono w-28 truncate">{kw.word}</span>
-            <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
-              <div
-                className="h-full rounded-full bg-indigo-500/60 transition-all duration-700"
-                style={{ width: `${(kw.count / maxCount) * 100}%` }}
-              />
-            </div>
-            <span className={`text-xs w-16 text-right ${kw.density > 3 ? "text-red-400" : kw.density >= 0.5 ? "text-emerald-400" : "text-slate-400"}`}>
-              {kw.count}x · {kw.density}%
-            </span>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Left: Frequency Bars */}
+        <div>
+          <p className="text-[11px] text-slate-500 uppercase tracking-wider font-medium mb-3">Top Keywords by Frequency</p>
+          <div className="space-y-2">
+            {top.map((kw, i) => (
+              <div key={kw.word} className="flex items-center gap-3">
+                <span className="text-xs text-slate-600 w-4 text-right shrink-0">{i + 1}</span>
+                <span className="text-sm text-white font-mono w-32 truncate shrink-0">{kw.word}</span>
+                <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${
+                      kw.density > 5 ? "bg-red-500/70" : kw.density >= 0.5 ? "bg-indigo-500/60" : "bg-slate-500/40"
+                    }`}
+                    style={{ width: `${(kw.count / maxCount) * 100}%` }}
+                  />
+                </div>
+                <span className={`text-xs w-16 text-right shrink-0 tabular-nums ${
+                  kw.density > 5 ? "text-red-400" : kw.density >= 0.5 ? "text-emerald-400" : "text-slate-400"
+                }`}>
+                  {kw.count}x · {kw.density}%
+                </span>
+              </div>
+            ))}
           </div>
-        ))}
+          <p className="text-[11px] text-slate-600 mt-3">
+            Density 0.5–3% = optimal (green). &gt;5% = over-optimized (red).
+          </p>
+        </div>
+
+        {/* Right: Coverage Matrix */}
+        {coverage.length > 0 && (
+          <div>
+            <p className="text-[11px] text-slate-500 uppercase tracking-wider font-medium mb-3">Keyword Coverage Matrix</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-slate-500 border-b border-white/5">
+                    <th className="text-left pb-2 font-medium">Keyword</th>
+                    <th className="text-center pb-2 font-medium w-10" title="In Page Title">T</th>
+                    <th className="text-center pb-2 font-medium w-10" title="In Meta Description">D</th>
+                    <th className="text-center pb-2 font-medium w-10" title="In H1 Heading">H1</th>
+                    <th className="text-center pb-2 font-medium w-10" title="In URL">URL</th>
+                    <th className="text-center pb-2 font-medium w-12">Score</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {coverage.map((row) => {
+                    const covered = [row.inTitle, row.inDesc, row.inH1, row.inUrl].filter(Boolean).length;
+                    const pct = Math.round((covered / 4) * 100);
+                    return (
+                      <tr key={row.word} className="hover:bg-white/5">
+                        <td className="py-2 font-mono text-slate-200 pr-3 max-w-[100px] truncate">{row.word}</td>
+                        <td className="py-2 text-center"><CoverageCell value={row.inTitle} /></td>
+                        <td className="py-2 text-center"><CoverageCell value={row.inDesc} /></td>
+                        <td className="py-2 text-center"><CoverageCell value={row.inH1} /></td>
+                        <td className="py-2 text-center"><CoverageCell value={row.inUrl} /></td>
+                        <td className="py-2 text-center">
+                          <span className={`font-bold ${pct === 100 ? "text-emerald-400" : pct >= 50 ? "text-amber-400" : "text-red-400"}`}>
+                            {pct}%
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <p className="text-[11px] text-slate-600 mt-2">T=Title · D=Description · H1 · URL</p>
+            </div>
+          </div>
+        )}
       </div>
-      <p className="text-xs text-slate-600 mt-3">
-        Green density = optimal (0.5–3%). Red = over-optimized. Click &quot;Show Coverage&quot; to see keyword placement.
-      </p>
     </div>
   );
 }
