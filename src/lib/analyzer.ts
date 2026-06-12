@@ -58,6 +58,7 @@ export interface AnalysisResult {
     keywords: CategoryResult;
     techStack: CategoryResult;
     accessibility: CategoryResult;
+    urlStructure: CategoryResult;
   };
   summary: {
     totalChecks: number;
@@ -886,7 +887,8 @@ function analyzeTechnical(
   robotsExists: boolean,
   responseTime: number,
   htmlSize: number,
-  has404?: boolean
+  has404?: boolean,
+  sitemapUrlCount?: number
 ): CategoryResult {
   const checks: Check[] = [];
 
@@ -935,8 +937,9 @@ function analyzeTechnical(
     status: sitemapExists ? "pass" : "warning",
     priority: "medium",
     message: sitemapExists
-      ? "Sitemap.xml is accessible — helps search engines discover all pages"
+      ? `Sitemap.xml is accessible${sitemapUrlCount ? ` — ${sitemapUrlCount} URL${sitemapUrlCount !== 1 ? "s" : ""} indexed` : ""}`
       : "Sitemap.xml not found — search engines may miss pages",
+    value: sitemapExists && sitemapUrlCount ? `${sitemapUrlCount} pages in sitemap` : undefined,
     recommendation: sitemapExists
       ? undefined
       : "Create a sitemap.xml and submit it to Google Search Console",
@@ -2186,6 +2189,284 @@ function analyzeAccessibility($: cheerio.CheerioAPI): CategoryResult {
   return { name: "Accessibility", icon: "♿", score: calcCategoryScore(checks), checks };
 }
 
+// ─── URL Structure ───────────────────────────────────────────────────────────
+
+function analyzeUrlStructure(url: string, $: cheerio.CheerioAPI, html: string): CategoryResult {
+  const checks: Check[] = [];
+
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { return { name: "URL Structure", icon: "🔗", score: 50, checks }; }
+
+  const path = parsed.pathname;
+  const fullUrl = url;
+
+  // URL Length
+  if (fullUrl.length > 115) {
+    checks.push({
+      name: "URL Length",
+      status: "warning",
+      priority: "medium",
+      message: `URL is too long (${fullUrl.length} chars) — keep under 115 for best SEO`,
+      value: fullUrl,
+      recommendation: "Shorten the URL slug — remove stop words and unnecessary parameters",
+    });
+  } else {
+    checks.push({
+      name: "URL Length",
+      status: "pass",
+      priority: "medium",
+      message: `URL length is good (${fullUrl.length} chars)`,
+    });
+  }
+
+  // Underscores in URL (hyphens preferred)
+  const hasUnderscores = path.includes("_");
+  checks.push({
+    name: "URL Format (Hyphens vs Underscores)",
+    status: hasUnderscores ? "warning" : "pass",
+    priority: "medium",
+    message: hasUnderscores
+      ? "URL contains underscores — Google treats underscores as word connectors, not separators"
+      : "URL uses hyphens — Google's preferred word separator",
+    recommendation: hasUnderscores ? "Replace underscores with hyphens in your URL slug" : undefined,
+  });
+
+  // Query parameters
+  const paramCount = Array.from(parsed.searchParams.keys()).length;
+  if (paramCount > 3) {
+    checks.push({
+      name: "URL Query Parameters",
+      status: "warning",
+      priority: "medium",
+      message: `URL has ${paramCount} query parameters — may cause duplicate content issues`,
+      recommendation: "Use canonical tags or URL rewriting to reduce parameter-heavy URLs",
+    });
+  } else if (paramCount > 0) {
+    checks.push({
+      name: "URL Query Parameters",
+      status: "pass",
+      priority: "low",
+      message: `URL has ${paramCount} query parameter(s) — acceptable`,
+    });
+  } else {
+    checks.push({
+      name: "URL Query Parameters",
+      status: "pass",
+      priority: "low",
+      message: "URL has no query parameters — clean URL structure",
+    });
+  }
+
+  // URL depth (slash count in path)
+  const depth = (path.match(/\//g) || []).length - 1;
+  if (depth > 4) {
+    checks.push({
+      name: "URL Depth",
+      status: "warning",
+      priority: "low",
+      message: `URL is deeply nested (${depth} levels deep) — harder to crawl and link to`,
+      recommendation: "Flatten URL structure to 3 levels or fewer: domain.com/category/page",
+    });
+  } else {
+    checks.push({
+      name: "URL Depth",
+      status: "pass",
+      priority: "low",
+      message: `URL depth is good (${Math.max(0, depth)} level${depth !== 1 ? "s" : ""} deep)`,
+    });
+  }
+
+  // HTTPS check
+  checks.push({
+    name: "HTTPS URL",
+    status: parsed.protocol === "https:" ? "pass" : "fail",
+    priority: "critical",
+    message: parsed.protocol === "https:"
+      ? "URL uses secure HTTPS protocol"
+      : "URL uses insecure HTTP — Google penalizes non-HTTPS sites",
+    recommendation: parsed.protocol !== "https:" ? "Install an SSL certificate and redirect all HTTP to HTTPS" : undefined,
+  });
+
+  // Special characters in URL
+  const hasSpecialChars = /[^a-zA-Z0-9\-._~:/?#[\]@!$&'()*+,;=%]/.test(path);
+  if (hasSpecialChars) {
+    checks.push({
+      name: "Special Characters in URL",
+      status: "warning",
+      priority: "medium",
+      message: "URL contains special characters — can cause issues with sharing and indexing",
+      recommendation: "Use only letters, numbers, and hyphens in URL paths",
+    });
+  } else {
+    checks.push({
+      name: "Special Characters in URL",
+      status: "pass",
+      priority: "low",
+      message: "URL contains no special characters — clean and shareable",
+    });
+  }
+
+  // Exposed email addresses
+  const emailRegex = /\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}\b/g;
+  const bodyText = $("body").text();
+  const emails = bodyText.match(emailRegex) || [];
+  const visibleEmails = emails.filter(e =>
+    !e.includes("example.com") && !e.includes("sentry") && !e.includes("@2x")
+  );
+  if (visibleEmails.length > 0) {
+    checks.push({
+      name: "Email Exposure",
+      status: "warning",
+      priority: "medium",
+      message: `${visibleEmails.length} email address(es) exposed in plain text — attracts spam bots`,
+      value: visibleEmails.slice(0, 2).join(", "),
+      recommendation: "Use contact forms or obfuscate emails: name [at] domain [dot] com",
+    });
+  } else {
+    checks.push({
+      name: "Email Exposure",
+      status: "pass",
+      priority: "low",
+      message: "No plain text email addresses exposed — good spam protection",
+    });
+  }
+
+  // Mixed content (HTTP assets on HTTPS page)
+  if (parsed.protocol === "https:") {
+    const httpSrcs: string[] = [];
+    $("[src],[href]").each((_, el) => {
+      const src = $(el).attr("src") || $(el).attr("href") || "";
+      if (src.startsWith("http://")) httpSrcs.push(src);
+    });
+    if (httpSrcs.length > 0) {
+      checks.push({
+        name: "Mixed Content",
+        status: "fail",
+        priority: "high",
+        message: `${httpSrcs.length} HTTP resource(s) loaded on an HTTPS page — browser will block them`,
+        value: httpSrcs.slice(0, 2).join(", "),
+        recommendation: "Update all resource URLs to use HTTPS or protocol-relative URLs (//)",
+      });
+    } else {
+      checks.push({
+        name: "Mixed Content",
+        status: "pass",
+        priority: "high",
+        message: "All resources load over HTTPS — no mixed content",
+      });
+    }
+  }
+
+  // iFrame usage
+  const iframes = $("iframe").length;
+  if (iframes > 0) {
+    checks.push({
+      name: "iFrame Usage",
+      status: "warning",
+      priority: "low",
+      message: `${iframes} iFrame(s) found — search engines cannot index iframe content`,
+      recommendation: "Avoid iFrames for important content; use native HTML or server-side includes instead",
+    });
+  }
+
+  // Flash content (always bad)
+  const hasFlash = html.toLowerCase().includes("application/x-shockwave-flash") || html.toLowerCase().includes(".swf");
+  if (hasFlash) {
+    checks.push({
+      name: "Flash Content",
+      status: "fail",
+      priority: "critical",
+      message: "Flash content detected — Flash is dead (EOL 2020), not indexed by Google, blocked by browsers",
+      recommendation: "Remove all Flash content immediately and replace with HTML5 equivalents",
+    });
+  }
+
+  // Social media profile links on the page
+  const socialNetworks = [
+    { name: "Facebook", pattern: "facebook.com/" },
+    { name: "Instagram", pattern: "instagram.com/" },
+    { name: "Twitter/X", pattern: /twitter\.com\/|x\.com\// },
+    { name: "LinkedIn", pattern: "linkedin.com/" },
+    { name: "YouTube", pattern: "youtube.com/" },
+    { name: "Pinterest", pattern: "pinterest.com/" },
+    { name: "TikTok", pattern: "tiktok.com/" },
+  ];
+
+  const foundSocial: string[] = [];
+  $("a[href]").each((_, el) => {
+    const href = $(el).attr("href") || "";
+    for (const sn of socialNetworks) {
+      if (typeof sn.pattern === "string" ? href.includes(sn.pattern) : sn.pattern.test(href)) {
+        if (!foundSocial.includes(sn.name)) foundSocial.push(sn.name);
+      }
+    }
+  });
+
+  if (foundSocial.length >= 3) {
+    checks.push({
+      name: "Social Media Profiles Linked",
+      status: "pass",
+      priority: "low",
+      message: `${foundSocial.length} social media profile(s) linked on the page`,
+      value: foundSocial.join(", "),
+    });
+  } else if (foundSocial.length > 0) {
+    checks.push({
+      name: "Social Media Profiles Linked",
+      status: "warning",
+      priority: "low",
+      message: `Only ${foundSocial.length} social profile link(s) found — add more for brand signals`,
+      value: foundSocial.join(", "),
+      recommendation: "Link to your Facebook, Instagram, Twitter, LinkedIn pages for brand authority",
+    });
+  } else {
+    checks.push({
+      name: "Social Media Profiles Linked",
+      status: "warning",
+      priority: "low",
+      message: "No social media profile links found on the page",
+      recommendation: "Add links to your social media profiles in the header or footer for brand trust signals",
+    });
+  }
+
+  // JS/CSS Minification check (look at inline scripts/styles size)
+  const inlineScriptContent = $("script:not([src])").map((_, el) => $(el).html() || "").get().join("");
+  const inlineStyleContent = $("style").map((_, el) => $(el).html() || "").get().join("");
+  const totalInlineCode = inlineScriptContent.length + inlineStyleContent.length;
+  if (totalInlineCode > 10000) {
+    const hasNewlines = (inlineScriptContent + inlineStyleContent).includes("\n");
+    if (hasNewlines) {
+      checks.push({
+        name: "Inline Code Minification",
+        status: "warning",
+        priority: "low",
+        message: `${Math.round(totalInlineCode / 1024)}KB of unminified inline JS/CSS detected`,
+        recommendation: "Minify inline scripts and styles to reduce page weight",
+      });
+    } else {
+      checks.push({
+        name: "Inline Code Minification",
+        status: "pass",
+        priority: "low",
+        message: "Inline JS/CSS appears to be minified",
+      });
+    }
+  }
+
+  return { name: "URL & Content Quality", icon: "🌐", score: calcCategoryScore(checks), checks };
+}
+
+// ─── Sitemap URL Count ────────────────────────────────────────────────────────
+
+async function countSitemapUrls(sitemapText: string): Promise<number> {
+  try {
+    const matches = sitemapText.match(/<loc>/g);
+    return matches ? matches.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 // ─── Main Analysis Function ──────────────────────────────────────────────────
 
 export async function analyzeSite(
@@ -2260,6 +2541,15 @@ export async function analyzeSite(
   const has404 =
     notFoundRes.status === "fulfilled" && notFoundRes.value.status === 404;
 
+  // Count sitemap URLs if sitemap exists
+  let sitemapUrlCount = 0;
+  if (sitemapRes.status === "fulfilled" && sitemapRes.value.ok) {
+    try {
+      const sitemapText = await sitemapRes.value.text();
+      sitemapUrlCount = await countSitemapUrls(sitemapText);
+    } catch { /* silent */ }
+  }
+
   const meta = analyzeMeta($, url);
   const headings = analyzeHeadings($);
   const images = analyzeImages($);
@@ -2273,7 +2563,8 @@ export async function analyzeSite(
     robotsExists,
     responseTime,
     htmlSize,
-    has404
+    has404,
+    sitemapUrlCount
   );
   const social = analyzeSocial($);
   const security = analyzeSecurity(url, responseHeaders);
@@ -2281,6 +2572,7 @@ export async function analyzeSite(
   const { category: keywords, topKeywords } = analyzeKeywords($, url, domainData);
   const techStack = analyzeTechStack($, html, responseHeaders, url);
   const accessibility = analyzeAccessibility($);
+  const urlStructure = analyzeUrlStructure(url, $, html);
 
   const categories = {
     meta,
@@ -2295,6 +2587,7 @@ export async function analyzeSite(
     keywords,
     techStack,
     accessibility,
+    urlStructure,
   };
 
   const allChecks = Object.values(categories).flatMap((c) => c.checks);
@@ -2306,17 +2599,18 @@ export async function analyzeSite(
     .filter((c) => c.status === "fail")
     .map((c) => c.message);
 
-  // Weighted scoring — keywords/authority gets 8%, meta stays at 20%
+  // Weighted scoring
   const categoryWeights: Record<string, number> = {
-    meta: 0.18,
-    security: 0.12,
-    technical: 0.11,
-    content: 0.11,
-    performance: 0.11,
+    meta: 0.17,
+    security: 0.11,
+    technical: 0.10,
+    content: 0.10,
+    performance: 0.10,
     headings: 0.08,
     keywords: 0.08,
-    social: 0.07,
+    social: 0.06,
     accessibility: 0.06,
+    urlStructure: 0.06,
     techStack: 0.04,
     images: 0.02,
     links: 0.02,
