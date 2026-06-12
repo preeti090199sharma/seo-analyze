@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { AnalysisResult, CategoryResult, Check, KeywordEntry } from "@/lib/analyzer";
 
 // ─── Score Circle ─────────────────────────────────────────────────────────────
@@ -276,104 +276,136 @@ function TopKeywordsPanel({ keywords, domainAuthority, pageMeta }: {
   );
 }
 
-// ─── Category Card ───────────────────────────────────────────────────────────
+// ─── Check Card (seositecheckup style) ───────────────────────────────────────
 
-function CategoryCard({
-  category,
-  isExpanded,
-  onToggle,
-}: {
-  category: CategoryResult;
-  isExpanded: boolean;
-  onToggle: () => void;
-}) {
-  const scoreColor =
-    category.score >= 80 ? "text-emerald-400" : category.score >= 50 ? "text-amber-400" : "text-red-400";
-  const barColor =
-    category.score >= 80 ? "bg-emerald-400" : category.score >= 50 ? "bg-amber-400" : "bg-red-400";
-
-  return (
-    <div className="glass rounded-xl overflow-hidden animate-fade-in">
-      <button
-        onClick={onToggle}
-        className="w-full p-5 flex items-center justify-between hover:bg-white/5 transition-colors"
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">{category.icon}</span>
-          <div className="text-left">
-            <h3 className="text-base font-semibold text-white">{category.name}</h3>
-            <div className="flex items-center gap-2 mt-1">
-              <div className="w-24 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${barColor} transition-all duration-1000`}
-                  style={{ width: `${category.score}%` }}
-                />
-              </div>
-              <span className="text-xs text-slate-400">
-                {category.checks.filter((c) => c.status === "pass").length}/
-                {category.checks.length} passed
-              </span>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className={`text-2xl font-bold ${scoreColor}`}>{category.score}</span>
-          <svg
-            className={`w-5 h-5 text-slate-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-            fill="none" viewBox="0 0 24 24" stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </div>
-      </button>
-
-      {isExpanded && (
-        <div className="border-t border-white/5 divide-y divide-white/5">
-          {category.checks.map((check, i) => (
-            <CheckRow key={i} check={check} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Check Row ────────────────────────────────────────────────────────────────
-
-function CheckRow({ check }: { check: Check }) {
+function CheckCard({ check }: { check: Check }) {
   const [showFix, setShowFix] = useState(false);
 
+  const cfg = {
+    pass:    { ring: "border-emerald-500/20 bg-emerald-500/5",  iconBg: "bg-emerald-500/20", iconColor: "text-emerald-400", icon: "✓" },
+    fail:    { ring: "border-red-500/20 bg-red-500/5",          iconBg: "bg-red-500/20",     iconColor: "text-red-400",     icon: "✕" },
+    warning: { ring: "border-amber-500/20 bg-amber-500/5",      iconBg: "bg-amber-500/20",   iconColor: "text-amber-400",   icon: "!" },
+  }[check.status];
+
   return (
-    <div className="px-5 py-3 flex flex-col sm:flex-row sm:items-start gap-2">
-      <div className="flex items-center gap-2 sm:w-44 shrink-0">
-        <StatusBadge status={check.status} />
-        <PriorityBadge priority={check.priority} />
+    <div className={`flex gap-4 p-4 rounded-xl border ${cfg.ring} transition-all`}>
+      <div className={`w-9 h-9 rounded-full ${cfg.iconBg} flex items-center justify-center shrink-0 mt-0.5`}>
+        <span className={`text-sm font-bold ${cfg.iconColor}`}>{cfg.icon}</span>
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-white">{check.name}</p>
-        <p className="text-xs text-slate-400 mt-0.5">{check.message}</p>
+        <div className="flex flex-wrap items-center gap-2 mb-1">
+          <span className="text-sm font-semibold text-white">{check.name}</span>
+          <PriorityBadge priority={check.priority} />
+        </div>
+        <p className="text-xs text-slate-400 leading-relaxed">{check.message}</p>
         {check.value && (
-          <p className="text-xs text-indigo-300 mt-1 font-mono truncate">{check.value}</p>
+          <p className="text-xs text-indigo-300 mt-1.5 font-mono bg-indigo-500/10 px-2 py-1 rounded-md inline-block max-w-full truncate">
+            {check.value}
+          </p>
         )}
         {check.recommendation && (
-          <p className="text-xs text-amber-300/80 mt-1 italic">→ {check.recommendation}</p>
+          <p className="text-xs text-amber-300/90 mt-2 flex items-start gap-1.5">
+            <span className="shrink-0 mt-px">→</span>
+            {check.recommendation}
+          </p>
         )}
         {check.fix && (
-          <div className="mt-1.5">
+          <div className="mt-2">
             <button
               onClick={() => setShowFix((v) => !v)}
-              className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+              className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1"
             >
-              {showFix ? "Hide fix ▲" : "Show fix ▼"}
+              <svg className={`w-3 h-3 transition-transform ${showFix ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+              {showFix ? "Hide code fix" : "View code fix"}
             </button>
             {showFix && (
-              <pre className="mt-2 text-xs bg-slate-900/80 text-emerald-300 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap font-mono border border-white/10">
+              <pre className="mt-2 text-xs bg-slate-950 text-emerald-300 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap font-mono border border-white/10">
                 {check.fix}
               </pre>
             )}
           </div>
         )}
       </div>
+      <div className="shrink-0 pt-0.5">
+        <StatusBadge status={check.status} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Category Section (flat, no accordion) ────────────────────────────────────
+
+function CategorySection({ category }: { category: CategoryResult }) {
+  const pass = category.checks.filter((c) => c.status === "pass").length;
+  const fail = category.checks.filter((c) => c.status === "fail").length;
+  const warn = category.checks.filter((c) => c.status === "warning").length;
+  const scoreColor = category.score >= 80 ? "text-emerald-400" : category.score >= 50 ? "text-amber-400" : "text-red-400";
+  const barColor   = category.score >= 80 ? "bg-emerald-400"   : category.score >= 50 ? "bg-amber-400"   : "bg-red-400";
+
+  return (
+    <div id={`cat-${category.name.toLowerCase().replace(/\s+/g, "-")}`} className="scroll-mt-20">
+      <div className="flex items-center gap-3 mb-4 pb-3 border-b border-white/8">
+        <span className="text-2xl">{category.icon}</span>
+        <div className="flex-1">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h3 className="text-base font-bold text-white">{category.name}</h3>
+            <span className={`text-lg font-bold ${scoreColor}`}>{category.score}<span className="text-xs font-normal text-slate-500">/100</span></span>
+            <div className="flex items-center gap-2 ml-auto">
+              {fail > 0 && <span className="text-xs px-2 py-0.5 bg-red-500/15 text-red-400 rounded-full border border-red-500/20">{fail} failed</span>}
+              {warn > 0 && <span className="text-xs px-2 py-0.5 bg-amber-500/15 text-amber-400 rounded-full border border-amber-500/20">{warn} warnings</span>}
+              {pass > 0 && <span className="text-xs px-2 py-0.5 bg-emerald-500/15 text-emerald-400 rounded-full border border-emerald-500/20">{pass} passed</span>}
+            </div>
+          </div>
+          <div className="w-full h-1 bg-white/8 rounded-full mt-2 overflow-hidden">
+            <div className={`h-full rounded-full ${barColor} transition-all duration-1000`} style={{ width: `${category.score}%` }} />
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-2">
+        {category.checks.map((check, i) => <CheckCard key={i} check={check} />)}
+      </div>
+    </div>
+  );
+}
+
+// ─── Category Filter Tabs ─────────────────────────────────────────────────────
+
+function CategoryFilterTabs({ categories, active, onSelect }: {
+  categories: AnalysisResult["categories"];
+  active: string | null;
+  onSelect: (name: string | null) => void;
+}) {
+  return (
+    <div className="flex gap-2 overflow-x-auto pb-2 mb-6" style={{ scrollbarWidth: "none" }}>
+      <button
+        onClick={() => onSelect(null)}
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${
+          active === null ? "bg-indigo-500 text-white" : "glass text-slate-400 hover:text-white"
+        }`}
+      >
+        All Checks
+      </button>
+      {Object.values(categories).map((cat) => {
+        const isActive = active === cat.name;
+        const hasIssues = cat.score < 80;
+        const scoreColor = isActive ? "text-white/80" : cat.score >= 80 ? "text-emerald-400" : cat.score >= 50 ? "text-amber-400" : "text-red-400";
+        return (
+          <button
+            key={cat.name}
+            onClick={() => onSelect(isActive ? null : cat.name)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all shrink-0 ${
+              isActive ? "bg-indigo-500 text-white" : "glass text-slate-400 hover:text-white"
+            }`}
+          >
+            <span>{cat.icon}</span>
+            <span>{cat.name}</span>
+            <span className={`font-bold ${scoreColor}`}>{cat.score}</span>
+            {hasIssues && !isActive && <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -709,7 +741,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState("");
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [shareCopied, setShareCopied] = useState(false);
@@ -720,14 +752,6 @@ export default function Home() {
   const [compareError, setCompareError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const toggleCategory = useCallback((name: string) => {
-    setExpandedCategories((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  }, []);
 
   // Load history from localStorage and handle share URL on mount
   useEffect(() => {
@@ -766,7 +790,7 @@ export default function Home() {
     setLoading(true);
     setResult(null);
     setError("");
-    setExpandedCategories(new Set());
+    setCategoryFilter(null);
 
     try {
       const res = await fetch("/api/analyze", {
@@ -781,11 +805,6 @@ export default function Home() {
       }
       setResult(data);
       saveToHistory(data);
-      // Auto-expand categories with score < 80
-      const failedCats = Object.entries(data.categories)
-        .filter(([, cat]) => (cat as CategoryResult).score < 80)
-        .map(([, cat]) => (cat as CategoryResult).name);
-      setExpandedCategories(new Set(failedCats));
     } catch {
       setError("Network error. Please check your connection and try again.");
     } finally {
@@ -1188,8 +1207,8 @@ export default function Home() {
                 return (
                   <button
                     key={cat.name}
-                    onClick={() => toggleCategory(cat.name)}
-                    className="glass-light rounded-xl p-4 text-center hover:bg-white/5 transition-colors"
+                    onClick={() => setCategoryFilter(prev => prev === cat.name ? null : cat.name)}
+                    className={`glass-light rounded-xl p-4 text-center hover:bg-white/5 transition-colors ${categoryFilter === cat.name ? "ring-2 ring-indigo-500" : ""}`}
                   >
                     <span className="text-xl">{cat.icon}</span>
                     <p className={`text-2xl font-bold mt-1 ${color}`}>{cat.score}</p>
@@ -1217,30 +1236,28 @@ export default function Home() {
             {/* AI Suggestions Panel */}
             <AiSuggestPanel result={result} />
 
-            {/* Detailed Categories */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
+            {/* Detailed Analysis — seositecheckup style */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-white">Detailed Analysis</h3>
-                <button
-                  onClick={() => {
-                    const allNames = Object.values(result.categories).map((c) => c.name);
-                    setExpandedCategories((prev) =>
-                      prev.size === allNames.length ? new Set() : new Set(allNames)
-                    );
-                  }}
-                  className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
-                >
-                  {expandedCategories.size === Object.values(result.categories).length ? "Collapse All" : "Expand All"}
-                </button>
+                {categoryFilter && (
+                  <button onClick={() => setCategoryFilter(null)} className="text-xs text-slate-400 hover:text-white transition-colors">
+                    ✕ Clear filter
+                  </button>
+                )}
               </div>
-              {Object.values(result.categories).map((cat) => (
-                <CategoryCard
-                  key={cat.name}
-                  category={cat}
-                  isExpanded={expandedCategories.has(cat.name)}
-                  onToggle={() => toggleCategory(cat.name)}
-                />
-              ))}
+              <CategoryFilterTabs
+                categories={result.categories}
+                active={categoryFilter}
+                onSelect={setCategoryFilter}
+              />
+              <div className="space-y-10">
+                {Object.values(result.categories)
+                  .filter((cat) => !categoryFilter || cat.name === categoryFilter)
+                  .map((cat) => (
+                    <CategorySection key={cat.name} category={cat} />
+                  ))}
+              </div>
             </div>
 
             {/* Footer Actions */}
