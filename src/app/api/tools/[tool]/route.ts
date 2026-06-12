@@ -272,6 +272,68 @@ function handleHeadingStructure($: cheerio.CheerioAPI) {
   return { headings, issues, counts, total: headings.length };
 }
 
+// ─── Keyword Rank Checker ────────────────────────────────────────────────────
+
+function handleKeywordRank($: cheerio.CheerioAPI, url: string, keyword: string) {
+  const kw = keyword.toLowerCase().trim();
+  const kwRegex = new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+
+  const rawTitle = $("title").text().trim();
+  const rawDesc = $('meta[name="description"]').attr("content")?.trim() || "";
+  const rawH1 = $("h1").first().text().trim();
+  const rawFirstPara = $("p").first().text().trim();
+  const rawAltTexts = $("img[alt]").map((_, el) => $(el).attr("alt") || "").get().join(" ");
+
+  $("script, style, noscript, nav, footer, header").remove();
+  const bodyText = $("body").text().replace(/\s+/g, " ").trim();
+  const totalWords = bodyText.split(/\s+/).filter((w) => w.length > 0).length;
+  const occurrences = (bodyText.match(kwRegex) || []).length;
+  const density = totalWords > 0 ? Number(((occurrences / totalWords) * 100).toFixed(2)) : 0;
+
+  const urlSlug = url.toLowerCase().replace(/[-_/]/g, " ");
+
+  const inTitle = rawTitle.toLowerCase().includes(kw);
+  const inDescription = rawDesc.toLowerCase().includes(kw);
+  const inH1 = rawH1.toLowerCase().includes(kw);
+  const inUrl = urlSlug.includes(kw);
+  const inFirstParagraph = rawFirstPara.toLowerCase().includes(kw);
+  const inAltText = rawAltTexts.toLowerCase().includes(kw);
+
+  let score = 0;
+  if (inTitle) score += 25;
+  if (inH1) score += 25;
+  if (inDescription) score += 20;
+  if (inUrl) score += 10;
+  if (inFirstParagraph) score += 10;
+  if (occurrences > 0) score += 5;
+  if (density >= 0.5 && density <= 3) score += 5;
+
+  const recs: { priority: "critical" | "high" | "medium" | "low"; text: string }[] = [];
+  if (!inTitle) recs.push({ priority: "critical", text: `Add "${keyword}" to your page title — biggest ranking factor` });
+  if (!inH1) recs.push({ priority: "critical", text: `Add "${keyword}" to your H1 heading` });
+  if (!inDescription) recs.push({ priority: "high", text: `Include "${keyword}" in meta description to improve click-through rate` });
+  if (!inUrl) recs.push({ priority: "medium", text: `Add "${keyword}" to URL slug (e.g. /your-page-${keyword.replace(/\s+/g, "-")})` });
+  if (!inFirstParagraph) recs.push({ priority: "medium", text: `Mention "${keyword}" in the first paragraph of your content` });
+  if (density < 0.5 && occurrences > 0) recs.push({ priority: "low", text: `Keyword density ${density}% is too low — aim for 0.5–2%` });
+  if (density > 3) recs.push({ priority: "high", text: `Keyword density ${density}% is too high — reduce to avoid keyword stuffing penalty` });
+  if (!inAltText && occurrences > 0) recs.push({ priority: "low", text: `Add "${keyword}" to at least one image alt attribute` });
+  if (occurrences === 0) recs.push({ priority: "critical", text: `Keyword not found on page at all — add relevant content about "${keyword}"` });
+
+  return {
+    keyword,
+    url,
+    score: Math.min(score, 100),
+    coverage: { inTitle, inDescription, inH1, inUrl, inFirstParagraph, inAltText },
+    stats: { occurrences, density, totalWords },
+    pageData: {
+      title: rawTitle,
+      description: rawDesc,
+      h1: rawH1,
+    },
+    recommendations: recs,
+  };
+}
+
 // ─── Main Handler ────────────────────────────────────────────────────────────
 
 export async function POST(
@@ -281,7 +343,7 @@ export async function POST(
   try {
     const { tool } = await params;
     const body = await req.json();
-    const { url } = body;
+    const { url, keyword } = body;
 
     if (!url || typeof url !== "string") {
       return NextResponse.json({ error: "Please provide a valid URL" }, { status: 400 });
@@ -313,6 +375,12 @@ export async function POST(
         return NextResponse.json(handleReadability($));
       case "heading-structure":
         return NextResponse.json(handleHeadingStructure($));
+      case "keyword-rank": {
+        if (!keyword || typeof keyword !== "string") {
+          return NextResponse.json({ error: "Please provide a keyword to check" }, { status: 400 });
+        }
+        return NextResponse.json(handleKeywordRank($, targetUrl, keyword));
+      }
       default:
         return NextResponse.json({ error: "Unknown tool" }, { status: 404 });
     }

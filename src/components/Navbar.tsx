@@ -14,6 +14,7 @@ const tools = [
   { href: "/tools/redirect-checker", label: "Redirect Checker", icon: "🔀" },
   { href: "/tools/readability", label: "Readability Checker", icon: "📖" },
   { href: "/tools/heading-structure", label: "Heading Structure", icon: "📑" },
+  { href: "/tools/keyword-rank", label: "Keyword Rank Checker", icon: "🎯" },
 ];
 
 export default function Navbar() {

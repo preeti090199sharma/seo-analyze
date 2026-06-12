@@ -56,6 +56,13 @@ const tools = [
     title: "Heading Structure Visualizer",
     desc: "Visualize your page's H1-H6 heading hierarchy and detect structural issues.",
   },
+  {
+    href: "/tools/keyword-rank",
+    icon: "🎯",
+    title: "Keyword Rank Checker",
+    desc: "Check how well your page is optimized for a target keyword. Get score, coverage matrix and fixes.",
+    badge: "New",
+  },
 ];
 
 export default function ToolsPage() {

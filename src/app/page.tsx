@@ -148,20 +148,49 @@ function TopActionsPanel({ categories }: { categories: AnalysisResult["categorie
 
 // ─── Top Keywords Panel ───────────────────────────────────────────────────────
 
-function TopKeywordsPanel({ keywords, domainAuthority }: {
+function CoverageCell({ value }: { value: boolean }) {
+  return value
+    ? <span className="text-emerald-400 text-xs font-bold">✓</span>
+    : <span className="text-red-400 text-xs">✗</span>;
+}
+
+function TopKeywordsPanel({ keywords, domainAuthority, pageMeta }: {
   keywords: KeywordEntry[];
   domainAuthority?: { score: number; rank: number };
+  pageMeta?: { title: string; description: string; h1: string; url: string };
 }) {
+  const [showCoverage, setShowCoverage] = useState(false);
   if (keywords.length === 0) return null;
 
   const top = keywords.slice(0, 10);
   const maxCount = top[0]?.count || 1;
+
+  const coverage = pageMeta
+    ? top.slice(0, 6).map((kw) => {
+        const kl = kw.word.toLowerCase();
+        return {
+          word: kw.word,
+          inTitle: pageMeta.title.toLowerCase().includes(kl),
+          inDesc: pageMeta.description.toLowerCase().includes(kl),
+          inH1: pageMeta.h1.toLowerCase().includes(kl),
+          inUrl: pageMeta.url.toLowerCase().includes(kl),
+        };
+      })
+    : [];
 
   return (
     <div className="glass rounded-2xl p-6 mb-6 animate-fade-in">
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <span className="text-xl">🔑</span>
         <h3 className="text-lg font-bold text-white">Keyword Analysis</h3>
+        {pageMeta && (
+          <button
+            onClick={() => setShowCoverage(!showCoverage)}
+            className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors border border-indigo-500/30 px-2 py-0.5 rounded-full"
+          >
+            {showCoverage ? "Hide Coverage" : "Show Coverage"}
+          </button>
+        )}
         {domainAuthority && (
           <span className={`ml-auto inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
             domainAuthority.score >= 5
@@ -182,6 +211,47 @@ function TopKeywordsPanel({ keywords, domainAuthority }: {
           </span>
         )}
       </div>
+
+      {/* Coverage Table */}
+      {showCoverage && coverage.length > 0 && (
+        <div className="mb-5 overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-slate-500 border-b border-white/5">
+                <th className="text-left pb-2 font-medium">Keyword</th>
+                <th className="text-center pb-2 font-medium w-14">Title</th>
+                <th className="text-center pb-2 font-medium w-14">Desc</th>
+                <th className="text-center pb-2 font-medium w-14">H1</th>
+                <th className="text-center pb-2 font-medium w-14">URL</th>
+                <th className="text-center pb-2 font-medium w-16">Score</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {coverage.map((row) => {
+                const covered = [row.inTitle, row.inDesc, row.inH1, row.inUrl].filter(Boolean).length;
+                const pct = Math.round((covered / 4) * 100);
+                return (
+                  <tr key={row.word} className="hover:bg-white/5">
+                    <td className="py-2 font-mono text-white pr-3">{row.word}</td>
+                    <td className="py-2 text-center"><CoverageCell value={row.inTitle} /></td>
+                    <td className="py-2 text-center"><CoverageCell value={row.inDesc} /></td>
+                    <td className="py-2 text-center"><CoverageCell value={row.inH1} /></td>
+                    <td className="py-2 text-center"><CoverageCell value={row.inUrl} /></td>
+                    <td className="py-2 text-center">
+                      <span className={`font-bold ${pct === 100 ? "text-emerald-400" : pct >= 50 ? "text-amber-400" : "text-red-400"}`}>
+                        {pct}%
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="text-xs text-slate-600 mt-2">Coverage across: Title · Meta Description · H1 · URL</p>
+        </div>
+      )}
+
+      {/* Frequency Bars */}
       <div className="space-y-2">
         {top.map((kw, i) => (
           <div key={kw.word} className="flex items-center gap-3">
@@ -193,14 +263,14 @@ function TopKeywordsPanel({ keywords, domainAuthority }: {
                 style={{ width: `${(kw.count / maxCount) * 100}%` }}
               />
             </div>
-            <span className="text-xs text-slate-400 w-16 text-right">
+            <span className={`text-xs w-16 text-right ${kw.density > 3 ? "text-red-400" : kw.density >= 0.5 ? "text-emerald-400" : "text-slate-400"}`}>
               {kw.count}x · {kw.density}%
             </span>
           </div>
         ))}
       </div>
       <p className="text-xs text-slate-600 mt-3">
-        Keyword density shown from visible page text. Focus keyword should appear at 1–3%.
+        Green density = optimal (0.5–3%). Red = over-optimized. Click &quot;Show Coverage&quot; to see keyword placement.
       </p>
     </div>
   );
@@ -1136,6 +1206,12 @@ export default function Home() {
             <TopKeywordsPanel
               keywords={result.topKeywords || []}
               domainAuthority={result.summary.domainAuthority}
+              pageMeta={{
+                title: result.pageTitle || "",
+                description: result.categories.meta?.checks.find(c => c.name === "Meta Description")?.value ?? "",
+                h1: result.categories.headings?.checks.find(c => c.name === "H1 Tag")?.value ?? "",
+                url: result.url,
+              }}
             />
 
             {/* AI Suggestions Panel */}
