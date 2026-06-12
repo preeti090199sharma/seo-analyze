@@ -60,7 +60,7 @@ Respond ONLY with a valid JSON object in this exact format (no markdown, no extr
 }`;
 
   try {
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
     const geminiRes = await fetch(geminiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -95,7 +95,15 @@ Respond ONLY with a valid JSON object in this exact format (no markdown, no extr
       );
     }
 
-    const suggestions = JSON.parse(jsonMatch[0]);
+    let suggestions;
+    try {
+      suggestions = JSON.parse(jsonMatch[0]);
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid AI response format. Please try again." },
+        { status: 500 }
+      );
+    }
     return NextResponse.json(suggestions);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Unknown error";

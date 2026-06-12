@@ -4,6 +4,30 @@ import * as cheerio from "cheerio";
 const UA =
   "Mozilla/5.0 (compatible; SEOAnalyzerBot/1.0; +https://seoanalyzer.app)";
 
+function isSafeUrl(rawUrl: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  const { protocol, hostname } = parsed;
+  if (protocol !== "http:" && protocol !== "https:") return false;
+  const h = hostname.toLowerCase();
+  if (h === "localhost" || h === "127.0.0.1" || h === "0.0.0.0" || h === "[::1]") return false;
+  if (!h.includes(".")) return false;
+  const ipv4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) {
+    const [, a, b] = ipv4.map(Number);
+    if (a === 10) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    if (a === 127) return false;
+    if (a === 169 && b === 254) return false;
+  }
+  return true;
+}
+
 async function fetchPage(url: string) {
   const start = Date.now();
   const res = await fetch(url, {
@@ -11,6 +35,9 @@ async function fetchPage(url: string) {
     redirect: "follow",
     signal: AbortSignal.timeout(15000),
   });
+  if (res.status >= 400) {
+    throw new Error(`HTTP ${res.status}: Website returned an error page. Cannot analyze.`);
+  }
   const html = await res.text();
   const headers: Record<string, string> = {};
   res.headers.forEach((v, k) => (headers[k.toLowerCase()] = v));
@@ -263,6 +290,10 @@ export async function POST(
     let targetUrl = url.trim();
     if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
       targetUrl = "https://" + targetUrl;
+    }
+
+    if (!isSafeUrl(targetUrl)) {
+      return NextResponse.json({ error: "This URL is not allowed for security reasons." }, { status: 400 });
     }
 
     if (tool === "redirect-check") {

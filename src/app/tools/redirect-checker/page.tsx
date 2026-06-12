@@ -16,7 +16,7 @@ export default function RedirectCheckerPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: { preventDefault(): void }) => {
     e.preventDefault();
     if (!url.trim()) return;
     setLoading(true);

@@ -24,7 +24,7 @@ export default function SocialPreviewPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: { preventDefault(): void }) => {
     e.preventDefault();
     if (!url.trim()) return;
     setLoading(true);
@@ -43,7 +43,7 @@ export default function SocialPreviewPage() {
     finally { setLoading(false); }
   };
 
-  const domain = data ? new URL(data.url).hostname : "";
+  const domain = data ? (() => { try { return new URL(data.url).hostname; } catch { return data.url; } })() : "";
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-10">

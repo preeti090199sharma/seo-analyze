@@ -327,7 +327,7 @@ function LoadingView({ url }: { url: string }) {
 
   const [currentStep, setCurrentStep] = useState(0);
 
-  useState(() => {
+  useEffect(() => {
     let step = 0;
     const interval = setInterval(() => {
       step++;
@@ -338,7 +338,7 @@ function LoadingView({ url }: { url: string }) {
       }
     }, 1400);
     return () => clearInterval(interval);
-  });
+  }, []);
 
   return (
     <div className="max-w-lg mx-auto text-center py-20">
@@ -462,7 +462,7 @@ function AiSuggestPanel({ result }: { result: AnalysisResult }) {
     (c) => c.name === "Meta Description"
   );
   const h1Check = result.categories.headings?.checks.find(
-    (c) => c.name === "Primary H1"
+    (c) => c.name === "H1 Tag"
   );
 
   const handleGenerate = async () => {
@@ -747,7 +747,7 @@ export default function Home() {
     }
   };
 
-  const handleAnalyze = (e: React.FormEvent) => {
+  const handleAnalyze = (e: { preventDefault(): void }) => {
     e.preventDefault();
     runAnalysis(url);
   };
@@ -1042,14 +1042,14 @@ export default function Home() {
                   <div className="space-y-4">
                     {/* Score comparison */}
                     <div className="flex items-center gap-4">
-                      <CompareBar label={new URL(result.url).hostname} score={result.score} isLeft={true} />
+                      <CompareBar label={(() => { try { return new URL(result.url).hostname; } catch { return result.url; } })()} score={result.score} isLeft={true} />
                       <div className="flex-1 text-center">
                         <p className="text-xs text-slate-500 mb-1">vs</p>
                         <p className={`text-sm font-bold ${result.score > compareResult.score ? "text-emerald-400" : result.score < compareResult.score ? "text-red-400" : "text-slate-400"}`}>
                           {result.score > compareResult.score ? `+${result.score - compareResult.score} ahead` : result.score < compareResult.score ? `${result.score - compareResult.score} behind` : "Tied"}
                         </p>
                       </div>
-                      <CompareBar label={new URL(compareResult.url).hostname} score={compareResult.score} isLeft={false} />
+                      <CompareBar label={(() => { try { return new URL(compareResult.url).hostname; } catch { return compareResult.url; } })()} score={compareResult.score} isLeft={false} />
                     </div>
 
                     {/* Category comparison */}
@@ -1077,8 +1077,8 @@ export default function Home() {
                       })}
                     </div>
                     <div className="flex justify-between text-xs text-slate-500 pt-1">
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-400 inline-block" />{new URL(result.url).hostname}</span>
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-400 inline-block" />{new URL(compareResult.url).hostname}</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-400 inline-block" />{(() => { try { return new URL(result.url).hostname; } catch { return result.url; } })()}</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-400 inline-block" />{(() => { try { return new URL(compareResult.url).hostname; } catch { return compareResult.url; } })()}</span>
                     </div>
                     <button
                       onClick={() => { setCompareResult(null); setCompareUrl(""); setCompareError(""); }}

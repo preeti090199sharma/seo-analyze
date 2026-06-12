@@ -7,6 +7,10 @@ function CharCount({ current, min, max }: { current: number; min: number; max: n
   return <span className={`text-xs ${status}`}>{current}/{max} chars {current >= min && current <= max ? "✓" : current === 0 ? "" : current < min ? "(too short)" : "(too long)"}</span>;
 }
 
+function esc(str: string) {
+  return str.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 export default function MetaGeneratorPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -19,24 +23,24 @@ export default function MetaGeneratorPage() {
   const generatedCode = [
     `<meta charset="UTF-8">`,
     `<meta name="viewport" content="width=device-width, initial-scale=1.0">`,
-    title && `<title>${title}</title>`,
-    description && `<meta name="description" content="${description}">`,
-    keywords && `<meta name="keywords" content="${keywords}">`,
-    author && `<meta name="author" content="${author}">`,
-    url && `<link rel="canonical" href="${url}">`,
+    title && `<title>${esc(title)}</title>`,
+    description && `<meta name="description" content="${esc(description)}">`,
+    keywords && `<meta name="keywords" content="${esc(keywords)}">`,
+    author && `<meta name="author" content="${esc(author)}">`,
+    url && `<link rel="canonical" href="${esc(url)}">`,
     "",
     "<!-- Open Graph / Facebook -->",
     `<meta property="og:type" content="website">`,
-    title && `<meta property="og:title" content="${title}">`,
-    description && `<meta property="og:description" content="${description}">`,
-    url && `<meta property="og:url" content="${url}">`,
-    ogImage && `<meta property="og:image" content="${ogImage}">`,
+    title && `<meta property="og:title" content="${esc(title)}">`,
+    description && `<meta property="og:description" content="${esc(description)}">`,
+    url && `<meta property="og:url" content="${esc(url)}">`,
+    ogImage && `<meta property="og:image" content="${esc(ogImage)}">`,
     "",
     "<!-- Twitter Card -->",
     `<meta name="twitter:card" content="summary_large_image">`,
-    title && `<meta name="twitter:title" content="${title}">`,
-    description && `<meta name="twitter:description" content="${description}">`,
-    ogImage && `<meta name="twitter:image" content="${ogImage}">`,
+    title && `<meta name="twitter:title" content="${esc(title)}">`,
+    description && `<meta name="twitter:description" content="${esc(description)}">`,
+    ogImage && `<meta name="twitter:image" content="${esc(ogImage)}">`,
   ]
     .filter(Boolean)
     .join("\n");
